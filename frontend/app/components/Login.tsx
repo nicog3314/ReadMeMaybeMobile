@@ -5,30 +5,38 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Image,
   ScrollView,
   Alert,
-  Platform,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
+import { useRouter } from "expo-router";
+import { Image } from "expo-image";
+
 export default function Login() {
-  const [message, setMessage] = useState("");
+  const router = useRouter();
+
   const [isCreateAccount, setIsCreateAccount] = useState(false);
-  const [fullName, setFullName] = useState("");
+  const [message, setMessage] = useState("");
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [loginName, setLoginName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
-  async function doLogin(): Promise<void> {
+  async function doLogin() {
     const obj = { login: loginName, password: loginPassword };
     const js = JSON.stringify(obj);
 
     try {
-      const response = await fetch("http://YOUR_BACKEND_URL/api/login", {
-        method: "POST",
-        body: js,
-        headers: { "Content-Type": "application/json" },
-      });
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_API_URL}/api/login`,
+        {
+          method: "POST",
+          body: js,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
 
       const res = await response.json();
 
@@ -43,14 +51,14 @@ export default function Login() {
 
         await AsyncStorage.setItem("user_data", JSON.stringify(user));
         setMessage("");
-        router.push("/dashboard");
+        router.replace("/dashboard");
       }
     } catch (error: any) {
       Alert.alert("Login Error", error.toString());
     }
   }
 
-  async function handleAuthSubmit(): Promise<void> {
+  async function handleAuthSubmit() {
     if (isCreateAccount) {
       setMessage("Not yet implemented.");
       return;
@@ -60,368 +68,268 @@ export default function Login() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
-      <View style={styles.container}>
-        <View style={styles.leftPanel}>
-          <View style={styles.circleLeft} />
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.screen}>
+        <View style={styles.bgBlobTopLeft} />
+        <View style={styles.bgBlobRight} />
+        <View style={styles.bgBlobBottomLeft} />
 
-          <View style={styles.leftContent}>
-            <View style={styles.logoRow}>
-              <Image
-                source={require("../../assets/images/icon.png")}
-                style={styles.logo}
-                resizeMode="cover"
-              />
-              <Text style={styles.brandText}>ReadMeMaybe</Text>
-            </View>
-
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>pre-v1.0 - AI-powered ReadMe’s</Text>
-            </View>
-
-            <View style={styles.heroSection}>
-              <Text style={styles.heroTitle}>Give your repositories</Text>
-              <Text style={[styles.heroTitle, styles.heroAccent]}>
-                descriptive ReadMe’s
-              </Text>
-              <Text style={styles.heroTitle}>in seconds</Text>
-
-              <Text style={styles.heroDescription}>
-                Paste a GitHub URL and let AI analyze your codebase and generate a
-                polished README, ready to display.
-              </Text>
-            </View>
-
-            <View style={styles.features}>
-              <FeatureDot
-                color="#1D9E75"
-                title="Smart structure detection"
-                text="scans folders, files, and dependencies automatically."
-              />
-              <FeatureDot
-                color="#7F77DD"
-                title="Markdown output"
-                text="copy, preview, or export your README instantly."
-              />
-              <FeatureDot
-                color="#534AB7"
-                title="Version history"
-                text="every generation is saved so you can compare and restore."
-              />
-            </View>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.logoRow}>
+            <Image
+              source={require("../../assets/images/icon.png")}
+              style={styles.logo}
+              contentFit="cover"
+            />
+            <Text style={styles.logoText}>ReadMeMaybe</Text>
           </View>
-        </View>
 
-        <View style={styles.rightPanel}>
-          <View style={styles.circleRight} />
-
-          <View style={styles.rightContent}>
-            <Text style={styles.heading}>
-              {isCreateAccount ? "Hello, new user" : "Welcome back"}
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>
+              pre-v1.0 - AI-powered ReadMe&apos;s
             </Text>
+          </View>
 
-            <Text style={styles.subheading}>
-              {isCreateAccount
-                ? "Create a new account to continue"
-                : "Sign in to your account to continue"}
-            </Text>
+          <Text style={styles.formTitle}>
+            {isCreateAccount ? "Hello, new user" : "Welcome back"}
+          </Text>
+          <Text style={styles.formSubtitle}>
+            {isCreateAccount
+              ? "Create a new account to continue"
+              : "Sign in to your account to continue"}
+          </Text>
 
-            <View style={styles.tabRow}>
-              <TouchableOpacity
+          <View style={styles.tabContainer}>
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                !isCreateAccount && styles.activeTabButton,
+              ]}
+              onPress={() => {
+                setIsCreateAccount(false);
+                setMessage("");
+              }}
+            >
+              <Text
                 style={[
-                  styles.tabButton,
-                  !isCreateAccount && styles.tabButtonActive,
+                  styles.tabText,
+                  !isCreateAccount && styles.activeTabText,
                 ]}
-                onPress={() => {
-                  setIsCreateAccount(false);
-                  setMessage("");
-                }}
               >
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    !isCreateAccount && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Sign in
-                </Text>
-              </TouchableOpacity>
+                Sign in
+              </Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                isCreateAccount && styles.activeTabButton,
+              ]}
+              onPress={() => {
+                setIsCreateAccount(true);
+                setMessage("");
+              }}
+            >
+              <Text
                 style={[
-                  styles.tabButton,
-                  isCreateAccount && styles.tabButtonActive,
+                  styles.tabText,
+                  isCreateAccount && styles.activeTabText,
                 ]}
-                onPress={() => {
-                  setIsCreateAccount(true);
-                  setMessage("");
-                }}
               >
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    isCreateAccount && styles.tabButtonTextActive,
-                  ]}
-                >
-                  Create Account
-                </Text>
-              </TouchableOpacity>
-            </View>
+                Create Account
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-            {isCreateAccount && (
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>NAME</Text>
+          {isCreateAccount && (
+            <View style={styles.nameRow}>
+              <View style={styles.nameField}>
+                <Text style={styles.label}>FIRST NAME</Text>
                 <TextInput
-                  placeholder="Your Name"
+                  placeholder="Your First Name"
                   placeholderTextColor="#534AB7"
-                  value={fullName}
-                  onChangeText={setFullName}
+                  value={firstName}
+                  onChangeText={setFirstName}
                   style={styles.input}
                 />
               </View>
-            )}
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>EMAIL</Text>
-              <TextInput
-                placeholder="you@example.com"
-                placeholderTextColor="#534AB7"
-                value={loginName}
-                onChangeText={setLoginName}
-                style={styles.input}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>PASSWORD</Text>
-              <TextInput
-                placeholder="........"
-                placeholderTextColor="#534AB7"
-                value={loginPassword}
-                onChangeText={setLoginPassword}
-                style={styles.input}
-                secureTextEntry
-              />
-            </View>
-
-            {!isCreateAccount && (
-              <TouchableOpacity style={styles.forgotButton}>
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={handleAuthSubmit}
-            >
-              <Text style={styles.primaryButtonText}>
-                {isCreateAccount ? "Create Account" : "Sign in"}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.dividerRow}>
-              <View style={styles.divider} />
-              <Text style={styles.dividerText}>or continue with</Text>
-              <View style={styles.divider} />
-            </View>
-
-            <TouchableOpacity style={styles.secondaryButton}>
-              <Text style={styles.secondaryButtonText}>Continue with Github</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.secondaryButton}>
-              <Text style={styles.secondaryButtonText}>Continue with Google</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.footerText}>
-              Don&apos;t have an account?{" "}
-              <Text style={styles.footerAccent}>Create one free</Text>
-            </Text>
-
-            {!!message && (
-              <View
-                style={[
-                  styles.messageBox,
-                  message.includes("incorrect")
-                    ? styles.messageError
-                    : styles.messageInfo,
-                ]}
-              >
-                <Text style={styles.messageText}>{message}</Text>
+              <View style={styles.nameField}>
+                <Text style={styles.label}>LAST NAME</Text>
+                <TextInput
+                  placeholder="Your Last Name"
+                  placeholderTextColor="#534AB7"
+                  value={lastName}
+                  onChangeText={setLastName}
+                  style={styles.input}
+                />
               </View>
-            )}
-          </View>
-        </View>
-      </View>
-    </ScrollView>
-  );
-}
+            </View>
+          )}
 
-function FeatureDot({
-  color,
-  title,
-  text,
-}: {
-  color: string;
-  title: string;
-  text: string;
-}) {
-  return (
-    <View style={styles.featureRow}>
-      <View style={[styles.featureDot, { backgroundColor: color }]} />
-      <Text style={styles.featureText}>
-        <Text style={styles.featureTitle}>{title}</Text> — {text}
-      </Text>
-    </View>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>EMAIL</Text>
+            <TextInput
+              placeholder="you@example.com"
+              placeholderTextColor="#534AB7"
+              value={loginName}
+              onChangeText={setLoginName}
+              style={styles.input}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>PASSWORD</Text>
+            <TextInput
+              placeholder="........"
+              placeholderTextColor="#534AB7"
+              value={loginPassword}
+              onChangeText={setLoginPassword}
+              style={styles.input}
+              secureTextEntry
+            />
+          </View>
+
+          {!isCreateAccount && (
+            <TouchableOpacity style={styles.forgotButton}>
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={styles.submitButton} onPress={handleAuthSubmit}>
+            <Text style={styles.submitButtonText}>
+              {isCreateAccount ? "Create Account" : "Sign in"}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>or continue with</Text>
+            <View style={styles.divider} />
+          </View>
+
+          <TouchableOpacity style={styles.oauthButton}>
+            <Text style={styles.oauthButtonText}>Continue with Github</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.oauthButton}>
+            <Text style={styles.oauthButtonText}>Continue with Google</Text>
+          </TouchableOpacity>
+
+          {message ? (
+            <View
+              style={[
+                styles.messageBox,
+                message.includes("incorrect")
+                  ? styles.errorMessageBox
+                  : styles.infoMessageBox,
+              ]}
+            >
+              <Text style={styles.messageText}>{message}</Text>
+            </View>
+          ) : null}
+        </ScrollView>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContainer: {
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#070617",
+  },
+  screen: {
+    flex: 1,
+    backgroundColor: "#070617",
+  },
+  content: {
     flexGrow: 1,
-  },
-  container: {
-    flex: 1,
-    flexDirection: Platform.OS === "web" ? "row" : "column",
-    backgroundColor: "#08071a",
-    minHeight: "100%",
-  },
-  leftPanel: {
-    flex: 1,
-    backgroundColor: "#08071a",
-    borderRightWidth: Platform.OS === "web" ? 1 : 0,
-    borderRightColor: "#252240",
-    overflow: "hidden",
-  },
-  rightPanel: {
-    flex: 1,
-    backgroundColor: "#08071a",
-    overflow: "hidden",
-  },
-  leftContent: {
-    paddingHorizontal: 32,
-    paddingTop: 80,
+    paddingHorizontal: 24,
+    paddingTop: 24,
     paddingBottom: 32,
   },
-  rightContent: {
-    paddingHorizontal: 32,
-    paddingTop: 80,
-    paddingBottom: 32,
-    maxWidth: 540,
-    width: "100%",
-    alignSelf: "center",
-  },
-  circleLeft: {
+  bgBlobTopLeft: {
     position: "absolute",
-    left: -80,
-    bottom: 56,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
-    backgroundColor: "rgba(83,74,183,0.12)",
+    top: -110,
+    left: -120,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: "rgba(127,119,221,0.10)",
   },
-  circleRight: {
+  bgBlobRight: {
     position: "absolute",
-    left: 80,
-    top: -150,
-    width: 392,
-    height: 392,
-    borderRadius: 196,
-    backgroundColor: "#141D25",
+    top: 230,
+    right: -140,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: "rgba(29,158,117,0.08)",
+  },
+  bgBlobBottomLeft: {
+    position: "absolute",
+    bottom: -120,
+    left: -100,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: "rgba(83,74,183,0.07)",
   },
   logoRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
+    gap: 12,
+    marginBottom: 14,
   },
   logo: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 16,
   },
-  brandText: {
+  logoText: {
     color: "#EEEDFE",
     fontSize: 24,
     fontWeight: "500",
   },
   badge: {
-    marginTop: 24,
     alignSelf: "flex-start",
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "rgba(83,74,183,0.4)",
     backgroundColor: "#1c1a2e",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: 36,
   },
   badgeText: {
     color: "#7F77DD",
     fontSize: 12,
   },
-  heroSection: {
-    marginTop: 24,
-  },
-  heroTitle: {
+  formTitle: {
     color: "#EEEDFE",
     fontSize: 30,
-    lineHeight: 38,
+    fontWeight: "500",
   },
-  heroAccent: {
-    color: "#1D9E75",
-  },
-  heroDescription: {
-    marginTop: 16,
-    maxWidth: 340,
+  formSubtitle: {
     color: "#7F77DD",
     fontSize: 16,
-    lineHeight: 24,
-  },
-  features: {
-    marginTop: 32,
-    gap: 24,
-    maxWidth: 360,
-  },
-  featureRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  featureDot: {
-    marginTop: 6,
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  featureText: {
-    flex: 1,
-    color: "#afa9ec",
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  featureTitle: {
-    color: "#EEEDFE",
-    fontWeight: "600",
-  },
-  heading: {
-    color: "#EEEDFE",
-    fontSize: 28,
-    fontWeight: "600",
-  },
-  subheading: {
     marginTop: 8,
-    color: "#7F77DD",
-    fontSize: 16,
+    marginBottom: 24,
   },
-  tabRow: {
-    marginTop: 32,
+  tabContainer: {
     flexDirection: "row",
-    borderRadius: 12,
+    backgroundColor: "#1c1a2e",
     borderWidth: 1,
     borderColor: "#252240",
-    backgroundColor: "#1c1a2e",
+    borderRadius: 12,
     padding: 4,
+    marginBottom: 24,
   },
   tabButton: {
     flex: 1,
@@ -429,24 +337,32 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
   },
-  tabButtonActive: {
+  activeTabButton: {
     backgroundColor: "#5A53B7",
   },
-  tabButtonText: {
+  tabText: {
     color: "#7F77DD",
     fontSize: 16,
+    fontWeight: "500",
   },
-  tabButtonTextActive: {
+  activeTabText: {
     color: "#EEEDFE",
-    fontWeight: "600",
+  },
+  nameRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 16,
+  },
+  nameField: {
+    flex: 1,
   },
   inputGroup: {
-    marginTop: 20,
+    marginBottom: 16,
   },
   label: {
-    marginBottom: 8,
     color: "#AFA9EC",
     fontSize: 13,
+    marginBottom: 8,
     letterSpacing: 1,
   },
   input: {
@@ -455,38 +371,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#3C3489",
     backgroundColor: "#1c1a2e",
+    color: "#EEEDFE",
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: "#EEEDFE",
     fontSize: 16,
   },
   forgotButton: {
-    marginTop: 10,
     alignSelf: "flex-end",
+    marginBottom: 16,
   },
   forgotText: {
     color: "#7F77DD",
     fontSize: 14,
   },
-  primaryButton: {
-    marginTop: 18,
+  submitButton: {
+    marginTop: 8,
     width: "100%",
     borderRadius: 12,
     backgroundColor: "#1D8E75",
-    paddingHorizontal: 16,
     paddingVertical: 14,
     alignItems: "center",
   },
-  primaryButtonText: {
+  submitButtonText: {
     color: "#EEEDFE",
     fontSize: 20,
     fontWeight: "600",
   },
   dividerRow: {
-    marginTop: 20,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    marginVertical: 20,
   },
   divider: {
     flex: 1,
@@ -497,42 +412,32 @@ const styles = StyleSheet.create({
     color: "#7F77DD",
     fontSize: 14,
   },
-  secondaryButton: {
-    marginTop: 14,
+  oauthButton: {
     width: "100%",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#3A336F",
     backgroundColor: "#1B1935",
-    paddingHorizontal: 16,
     paddingVertical: 14,
     alignItems: "center",
+    marginBottom: 12,
   },
-  secondaryButtonText: {
+  oauthButtonText: {
     color: "#EEEDFE",
     fontSize: 18,
   },
-  footerText: {
-    marginTop: 16,
-    textAlign: "center",
-    color: "#7F77DD",
-    fontSize: 14,
-  },
-  footerAccent: {
-    color: "#AFA9EC",
-  },
   messageBox: {
-    marginTop: 16,
+    marginTop: 12,
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 16,
     paddingVertical: 14,
   },
-  messageError: {
+  errorMessageBox: {
     borderColor: "rgba(248,113,113,0.5)",
     backgroundColor: "rgba(239,68,68,0.1)",
   },
-  messageInfo: {
+  infoMessageBox: {
     borderColor: "rgba(127,119,221,0.5)",
     backgroundColor: "rgba(127,119,221,0.1)",
   },
