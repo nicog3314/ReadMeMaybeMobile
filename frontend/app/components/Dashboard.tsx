@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -7,11 +7,43 @@ import {
   StyleSheet,
   ScrollView,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
 export default function Dashboard() {
   const router = useRouter();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLasttName] = useState("");
+  const userInitials = [firstName, lastName]
+    .map((name) => name.trim().charAt(0))
+    .filter(Boolean)
+    .join("")
+    .toUpperCase();
+
+  // Getting User Info
+  useEffect(() => {
+    async function loadUser() {
+      const raw = await AsyncStorage.getItem("user_data");
+
+      if (!raw) {
+        router.replace("/login");
+        return;
+      }
+
+      const user = JSON.parse(raw);
+      setFirstName(user.firstName ?? "");
+      setLasttName(user.lastName ?? "");
+    }
+
+    loadUser();
+  }, [router]);
+
+  // Handling logout
+  async function handleLogout() {
+    await AsyncStorage.removeItem("user_data");
+    router.replace("/login");
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -69,7 +101,7 @@ export default function Dashboard() {
           {/* Page header */}
           <View style={styles.pageHeader}>
             <Text style={styles.pageTitle}>Dashboard</Text>
-            <Text style={styles.pageSubtitle}>Welcome back, Jane</Text>
+            <Text style={styles.pageSubtitle}>Welcome back, {firstName}</Text>
           </View>
 
           {/* Stat cards */}
@@ -160,9 +192,13 @@ export default function Dashboard() {
           {/* User footer */}
           <View style={styles.userFooter}>
             <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>JD</Text>
+              <Text style={styles.userAvatarText}>{userInitials || "JD"}</Text>
             </View>
-            <Text style={styles.userName}>Jane Doe</Text>
+            <Text style={styles.userName}>{[firstName, lastName].filter(Boolean).join(" ") || "Jone Doe"}</Text>
+
+            <TouchableOpacity style={styles.viewButton} onPress={handleLogout}>
+              <Text style={styles.viewButtonText}>Log out</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </View>
@@ -607,6 +643,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     paddingHorizontal: 12,
     paddingVertical: 8,
+    marginLeft: 12,
   },
   viewButtonDisabled: {
     backgroundColor: "#1c1a2d",

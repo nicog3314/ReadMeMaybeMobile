@@ -19,15 +19,27 @@ app.use('/api/auth', authRoutes);
 const hardcodedMongoUri = process.env.MONGODB_URI;
 
 async function getMongoUri() {
-    try{
+    if (process.env.MONGODB_URI) {
+        console.log('Using MONGODB_URI from .env');
+        return process.env.MONGODB_URI;
+    }
+
+    try {
+        console.log('MONGODB_URI not found locally, trying AWS Secrets Manager...');
         const client = new SecretsManagerClient({ region: "us-east-2" });
-        const response = await client.send(new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" }));
+        const response = await client.send(
+            new GetSecretValueCommand({ SecretId: "prod/readmemaybe/database" })
+        );
+
         const secrets = JSON.parse(response.SecretString);
-        if (!secrets.MONGODB_URI) throw new Error('MONGODB_URI missing in Secrets');
-        return secrets.MONGODB_URI; 
-    }catch(err){
-        console.warn('Could not get AWS secret. Using hard coded MONGODB_URI');
-        return hardcodedMongoUri;
+        if (!secrets.MONGODB_URI) {
+            throw new Error('MONGODB_URI missing in Secrets');
+        }
+
+        return secrets.MONGODB_URI;
+    } catch (err) {
+        console.error('Could not get Mongo URI from AWS:', err);
+        throw err;
     }
 }
 
@@ -40,6 +52,7 @@ async function initDatabase() {
 
 initDatabase()
     .then(() => {
+        console.log('Database ready, starting API...');
         app.listen(PORT, '127.0.0.1', () => {
             console.log(`API listening on 127.0.0.1:${PORT}`);
         });
