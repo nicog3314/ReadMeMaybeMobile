@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
@@ -25,28 +25,29 @@ export default function Login() {
   const [loginPassword, setLoginPassword] = useState("");
 
   async function doLogin() {
-    const obj = { login: loginName, password: loginPassword };
-    const js = JSON.stringify(obj);
-
     try {
       const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/api/login`,
+        `${process.env.EXPO_PUBLIC_API_URL}/api/auth/login`,
         {
           method: "POST",
-          body: js,
+          body: JSON.stringify({
+            Email: loginName,
+            Password: loginPassword,
+          }),
           headers: { "Content-Type": "application/json" },
         }
       );
 
       const res = await response.json();
 
-      if (res.id <= 0) {
-        setMessage("User/Password combination incorrect");
+      if (!response.ok) {
+        setMessage(res.message || "Login failed");
       } else {
         const user = {
-          firstName: res.firstName,
-          lastName: res.lastName,
-          id: res.id,
+          firstName: res.user.FirstName,
+          lastName: res.user.LastName,
+          id: res.user._id,
+          token: res.jwtToken,
         };
 
         await AsyncStorage.setItem("user_data", JSON.stringify(user));
@@ -58,21 +59,56 @@ export default function Login() {
     }
   }
 
+  async function doRegister() {
+    try {
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_API_URL}/api/auth/register`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            FirstName: firstName,
+            LastName: lastName,
+            Login: loginName,
+            Email: loginName,
+            Password: loginPassword,
+          }),
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+
+      const res = await response.json();
+
+      if (!response.ok) {
+        setMessage(res.message || "Registration failed");
+      } else {
+        setMessage("Account created! You can now sign in.");
+        setIsCreateAccount(false);
+      }
+    } catch (error: any) {
+      Alert.alert("Registration Error", error.toString());
+    }
+  }
+
   async function handleAuthSubmit() {
     if (isCreateAccount) {
-      setMessage("Not yet implemented.");
+      await doRegister();
       return;
     }
 
     await doLogin();
   }
 
+  const isErrorMessage =
+    message.toLowerCase().includes("invalid") ||
+    message.toLowerCase().includes("incorrect") ||
+    message.toLowerCase().includes("failed") ||
+    message.toLowerCase().includes("in use");
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
-        <View style={styles.bgBlobTopLeft} />
-        <View style={styles.bgBlobRight} />
-        <View style={styles.bgBlobBottomLeft} />
+        <View style={styles.leftBlob} />
+        <View style={styles.topRightBlob} />
 
         <ScrollView
           contentContainerStyle={styles.content}
@@ -88,151 +124,154 @@ export default function Login() {
           </View>
 
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>
-              pre-v1.0 - AI-powered ReadMe&apos;s
-            </Text>
+            <Text style={styles.badgeText}>pre-v1.0 - AI-powered ReadMe&apos;s</Text>
           </View>
 
-          <Text style={styles.formTitle}>
-            {isCreateAccount ? "Hello, new user" : "Welcome back"}
-          </Text>
-          <Text style={styles.formSubtitle}>
-            {isCreateAccount
-              ? "Create a new account to continue"
-              : "Sign in to your account to continue"}
-          </Text>
+          <View style={styles.formCard}>
+            <Text style={styles.formTitle}>
+              {isCreateAccount ? "Hello, new user" : "Welcome back"}
+            </Text>
+            <Text style={styles.formSubtitle}>
+              {isCreateAccount
+                ? "Create a new account to continue"
+                : "Sign in to your account to continue"}
+            </Text>
 
-          <View style={styles.tabContainer}>
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                !isCreateAccount && styles.activeTabButton,
-              ]}
-              onPress={() => {
-                setIsCreateAccount(false);
-                setMessage("");
-              }}
-            >
-              <Text
+            <View style={styles.tabContainer}>
+              <TouchableOpacity
                 style={[
-                  styles.tabText,
-                  !isCreateAccount && styles.activeTabText,
+                  styles.tabButton,
+                  !isCreateAccount && styles.activeTabButton,
                 ]}
+                onPress={() => {
+                  setIsCreateAccount(false);
+                  setMessage("");
+                }}
               >
-                Sign in
+                <Text
+                  style={[
+                    styles.tabText,
+                    !isCreateAccount && styles.activeTabText,
+                  ]}
+                >
+                  Sign in
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.tabButton,
+                  isCreateAccount && styles.activeTabButton,
+                ]}
+                onPress={() => {
+                  setIsCreateAccount(true);
+                  setMessage("");
+                }}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    isCreateAccount && styles.activeTabText,
+                  ]}
+                >
+                  Create Account
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {isCreateAccount && (
+              <View style={styles.nameRow}>
+                <View style={styles.nameField}>
+                  <Text style={styles.label}>FIRST NAME</Text>
+                  <TextInput
+                    placeholder="Your First Name"
+                    placeholderTextColor="#534AB7"
+                    value={firstName}
+                    onChangeText={setFirstName}
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={styles.nameField}>
+                  <Text style={styles.label}>LAST NAME</Text>
+                  <TextInput
+                    placeholder="Your Last Name"
+                    placeholderTextColor="#534AB7"
+                    value={lastName}
+                    onChangeText={setLastName}
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+            )}
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>EMAIL</Text>
+              <TextInput
+                placeholder="you@example.com"
+                placeholderTextColor="#534AB7"
+                value={loginName}
+                onChangeText={setLoginName}
+                style={styles.input}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>PASSWORD</Text>
+              <TextInput
+                placeholder="........"
+                placeholderTextColor="#534AB7"
+                value={loginPassword}
+                onChangeText={setLoginPassword}
+                style={styles.input}
+                secureTextEntry
+              />
+            </View>
+
+            {!isCreateAccount && (
+              <TouchableOpacity style={styles.forgotButton}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.submitButton}
+              onPress={handleAuthSubmit}
+            >
+              <Text style={styles.submitButtonText}>
+                {isCreateAccount ? "Create Account" : "Sign in"}
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                isCreateAccount && styles.activeTabButton,
-              ]}
-              onPress={() => {
-                setIsCreateAccount(true);
-                setMessage("");
-              }}
-            >
-              <Text
+            <View style={styles.dividerRow}>
+              <View style={styles.divider} />
+              <Text style={styles.dividerText}>or continue with</Text>
+              <View style={styles.divider} />
+            </View>
+
+            <TouchableOpacity style={styles.oauthButton}>
+              <Text style={styles.oauthButtonText}>Continue with Github</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.oauthButton}>
+              <Text style={styles.oauthButtonText}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            {message ? (
+              <View
                 style={[
-                  styles.tabText,
-                  isCreateAccount && styles.activeTabText,
+                  styles.messageBox,
+                  isErrorMessage
+                    ? styles.errorMessageBox
+                    : styles.successMessageBox,
                 ]}
               >
-                Create Account
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {isCreateAccount && (
-            <View style={styles.nameRow}>
-              <View style={styles.nameField}>
-                <Text style={styles.label}>FIRST NAME</Text>
-                <TextInput
-                  placeholder="Your First Name"
-                  placeholderTextColor="#534AB7"
-                  value={firstName}
-                  onChangeText={setFirstName}
-                  style={styles.input}
-                />
+                <Text style={styles.messageText}>{message}</Text>
               </View>
-
-              <View style={styles.nameField}>
-                <Text style={styles.label}>LAST NAME</Text>
-                <TextInput
-                  placeholder="Your Last Name"
-                  placeholderTextColor="#534AB7"
-                  value={lastName}
-                  onChangeText={setLastName}
-                  style={styles.input}
-                />
-              </View>
-            </View>
-          )}
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>EMAIL</Text>
-            <TextInput
-              placeholder="you@example.com"
-              placeholderTextColor="#534AB7"
-              value={loginName}
-              onChangeText={setLoginName}
-              style={styles.input}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
+            ) : null}
           </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>PASSWORD</Text>
-            <TextInput
-              placeholder="........"
-              placeholderTextColor="#534AB7"
-              value={loginPassword}
-              onChangeText={setLoginPassword}
-              style={styles.input}
-              secureTextEntry
-            />
-          </View>
-
-          {!isCreateAccount && (
-            <TouchableOpacity style={styles.forgotButton}>
-              <Text style={styles.forgotText}>Forgot password?</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity style={styles.submitButton} onPress={handleAuthSubmit}>
-            <Text style={styles.submitButtonText}>
-              {isCreateAccount ? "Create Account" : "Sign in"}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>or continue with</Text>
-            <View style={styles.divider} />
-          </View>
-
-          <TouchableOpacity style={styles.oauthButton}>
-            <Text style={styles.oauthButtonText}>Continue with Github</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.oauthButton}>
-            <Text style={styles.oauthButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
-
-          {message ? (
-            <View
-              style={[
-                styles.messageBox,
-                message.includes("incorrect")
-                  ? styles.errorMessageBox
-                  : styles.infoMessageBox,
-              ]}
-            >
-              <Text style={styles.messageText}>{message}</Text>
-            </View>
-          ) : null}
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -242,60 +281,50 @@ export default function Login() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#070617",
+    backgroundColor: "#08071a",
   },
   screen: {
     flex: 1,
-    backgroundColor: "#070617",
+    backgroundColor: "#08071a",
   },
   content: {
-    flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 32,
+    paddingTop: 20,
+    paddingBottom: 36,
   },
-  bgBlobTopLeft: {
+  leftBlob: {
     position: "absolute",
-    top: -110,
-    left: -120,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: "rgba(127,119,221,0.10)",
+    left: -90,
+    bottom: 80,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(83,74,183,0.12)",
   },
-  bgBlobRight: {
+  topRightBlob: {
     position: "absolute",
-    top: 230,
-    right: -140,
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: "rgba(29,158,117,0.08)",
-  },
-  bgBlobBottomLeft: {
-    position: "absolute",
-    bottom: -120,
-    left: -100,
+    right: -110,
+    top: -70,
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: "rgba(83,74,183,0.07)",
+    backgroundColor: "rgba(20,29,37,1)",
   },
   logoRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 14,
+    marginBottom: 20,
   },
   logo: {
     width: 40,
     height: 40,
     borderRadius: 16,
+    marginRight: 12,
   },
   logoText: {
     color: "#EEEDFE",
     fontSize: 24,
-    fontWeight: "500",
+    fontWeight: "600",
   },
   badge: {
     alignSelf: "flex-start",
@@ -305,35 +334,89 @@ const styles = StyleSheet.create({
     backgroundColor: "#1c1a2e",
     paddingHorizontal: 12,
     paddingVertical: 6,
-    marginBottom: 36,
+    marginBottom: 20,
   },
   badgeText: {
     color: "#7F77DD",
     fontSize: 12,
   },
-  formTitle: {
+  heroSection: {
+    marginBottom: 28,
+  },
+  heroTitle: {
     color: "#EEEDFE",
     fontSize: 30,
+    lineHeight: 38,
+    fontWeight: "500",
+  },
+  heroAccent: {
+    color: "#1D9E75",
+    fontSize: 30,
+    lineHeight: 38,
+    fontWeight: "500",
+  },
+  heroDescription: {
+    color: "#7F77DD",
+    fontSize: 16,
+    lineHeight: 24,
+    marginTop: 14,
+    maxWidth: 320,
+  },
+  featureList: {
+    marginBottom: 28,
+    gap: 18,
+  },
+  featureItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  featureDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 6,
+  },
+  featureText: {
+    flex: 1,
+    color: "#AFA9EC",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  featureBold: {
+    color: "#EEEDFE",
+    fontWeight: "600",
+  },
+  formCard: {
+    borderWidth: 1,
+    borderColor: "#252240",
+    backgroundColor: "rgba(28,26,46,0.35)",
+    borderRadius: 20,
+    padding: 20,
+  },
+  formTitle: {
+    color: "#EEEDFE",
+    fontSize: 28,
     fontWeight: "500",
   },
   formSubtitle: {
     color: "#7F77DD",
     fontSize: 16,
     marginTop: 8,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   tabContainer: {
     flexDirection: "row",
-    backgroundColor: "#1c1a2e",
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#252240",
-    borderRadius: 12,
+    backgroundColor: "#1c1a2e",
     padding: 4,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   tabButton: {
     flex: 1,
-    borderRadius: 10,
+    borderRadius: 8,
     paddingVertical: 12,
     alignItems: "center",
   },
@@ -366,7 +449,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   input: {
-    width: "100%",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#3C3489",
@@ -385,8 +467,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   submitButton: {
-    marginTop: 8,
-    width: "100%",
+    marginTop: 6,
     borderRadius: 12,
     backgroundColor: "#1D8E75",
     paddingVertical: 14,
@@ -413,7 +494,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   oauthButton: {
-    width: "100%",
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#3A336F",
@@ -437,9 +517,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(248,113,113,0.5)",
     backgroundColor: "rgba(239,68,68,0.1)",
   },
-  infoMessageBox: {
-    borderColor: "rgba(127,119,221,0.5)",
-    backgroundColor: "rgba(127,119,221,0.1)",
+  successMessageBox: {
+    borderColor: "rgba(29,158,117,0.5)",
+    backgroundColor: "rgba(29,158,117,0.1)",
   },
   messageText: {
     color: "#EEEDFE",
