@@ -200,6 +200,7 @@ export default function Dashboard() {
               <Text style={styles.viewButtonText}>Log out</Text>
             </TouchableOpacity>
           </View>
+          
         </ScrollView>
       </View>
     </SafeAreaView>
