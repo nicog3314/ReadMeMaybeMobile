@@ -1,45 +1,187 @@
 import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
+  ActivityIndicator,
+  Modal,
   ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
+type StoredUser = {
+  firstName?: string;
+  lastName?: string;
+  token?: string;
+};
+
+type StoredReadme = {
+  id: string;
+  title: string;
+  repository: string;
+  repositoryUrl: string;
+  content: string;
+  tags: string[];
+  createdAt: string;
+};
+
+function normalizeReadme(raw: any, index: number): StoredReadme {
+  return {
+    id: String(raw?.id ?? raw?._id ?? `readme-${index}`),
+    title:
+      raw?.title ??
+      raw?.name ??
+      raw?.repository ??
+      raw?.repositoryName ??
+      `README ${index + 1}`,
+    repository: raw?.repository ?? raw?.repositoryName ?? raw?.title ?? "",
+    repositoryUrl: raw?.repositoryUrl ?? raw?.repoUrl ?? raw?.url ?? "",
+    content: raw?.content ?? raw?.markdown ?? raw?.readme ?? raw?.text ?? "",
+    tags: Array.isArray(raw?.tags)
+      ? raw.tags.filter((tag: unknown) => typeof tag === "string")
+      : [],
+    createdAt: String(raw?.createdAt ?? raw?.updatedAt ?? ""),
+  };
+}
+
+function formatReadmeDate(dateValue: string) {
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Saved recently";
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function buildPreview(content: string) {
+  const preview = content.replace(/\s+/g, " ").trim();
+
+  if (!preview) {
+    return "Saved README content will appear here when available.";
+  }
+
+  return preview.length > 140 ? `${preview.slice(0, 140)}...` : preview;
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [firstName, setFirstName] = useState("");
-  const [lastName, setLasttName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [readmes, setReadmes] = useState<StoredReadme[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [selectedReadme, setSelectedReadme] = useState<StoredReadme | null>(
+    null
+  );
+
   const userInitials = [firstName, lastName]
     .map((name) => name.trim().charAt(0))
     .filter(Boolean)
     .join("")
     .toUpperCase();
 
-  // Getting User Info
-  useEffect(() => {
-    async function loadUser() {
-      const raw = await AsyncStorage.getItem("user_data");
+  async function loadDashboardData() {
+    const raw = await AsyncStorage.getItem("user_data");
 
-      if (!raw) {
-        router.replace("/login");
-        return;
-      }
-
-      const user = JSON.parse(raw);
-      setFirstName(user.firstName ?? "");
-      setLasttName(user.lastName ?? "");
+    if (!raw) {
+      router.replace("/login");
+      return;
     }
 
-    loadUser();
+    const storedUser: StoredUser = JSON.parse(raw);
+    setFirstName(storedUser.firstName ?? "");
+    setLastName(storedUser.lastName ?? "");
+
+    if (!storedUser.token) {
+      await AsyncStorage.removeItem("user_data");
+      router.replace("/login");
+      return;
+    }
+
+    if (!process.env.EXPO_PUBLIC_API_URL) {
+      setReadmes([]);
+      setLoadError("Missing API URL for loading saved READMEs.");
+      return;
+    }
+
+    const response = await fetch(
+      `${process.env.EXPO_PUBLIC_API_URL}/api/auth/readmes`,
+      {
+        headers: {
+          Authorization: `Bearer ${storedUser.token}`,
+        },
+      }
+    );
+
+    const data = await response.json();
+
+    if (response.status === 401) {
+      await AsyncStorage.removeItem("user_data");
+      router.replace("/login");
+      return;
+    }
+
+    if (!response.ok) {
+      setReadmes([]);
+      setLoadError(data.message || "Unable to load your saved READMEs.");
+      return;
+    }
+
+    const nextReadmes = Array.isArray(data.readmes)
+      ? data.readmes.map(normalizeReadme)
+      : [];
+
+    setReadmes(nextReadmes);
+    setLoadError("");
+  }
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function bootstrapDashboard() {
+      try {
+        await loadDashboardData();
+      } catch (error) {
+        if (isMounted) {
+          setReadmes([]);
+          setLoadError("Unable to load your saved READMEs right now.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    bootstrapDashboard();
+
+    return () => {
+      isMounted = false;
+    };
   }, [router]);
 
-  // Handling logout
+  async function handleRetry() {
+    setIsLoading(true);
+    setLoadError("");
+
+    try {
+      await loadDashboardData();
+    } catch (error) {
+      setReadmes([]);
+      setLoadError("Unable to load your saved READMEs right now.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function handleLogout() {
     await AsyncStorage.removeItem("user_data");
     router.replace("/login");
@@ -54,7 +196,6 @@ export default function Dashboard() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header / Brand */}
           <View style={styles.headerCard}>
             <View style={styles.logoRow}>
               <View style={styles.logoBox}>
@@ -83,7 +224,7 @@ export default function Dashboard() {
                   <View style={styles.repoLineMedium} />
                   <View style={styles.repoLineShort} />
                 </View>
-                <Text style={styles.navText}>My Repos</Text>
+                <Text style={styles.navText}>Saved READMEs</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -98,189 +239,160 @@ export default function Dashboard() {
             </View>
           </View>
 
-          {/* Page header */}
           <View style={styles.pageHeader}>
             <Text style={styles.pageTitle}>Dashboard</Text>
-            <Text style={styles.pageSubtitle}>Welcome back, {firstName}</Text>
+            <Text style={styles.pageSubtitle}>
+              Welcome back, {firstName || "there"}. View your saved READMEs
+              below.
+            </Text>
           </View>
 
-          {/* Stat cards */}
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>
-                READMEs{"\n"}Generated
-              </Text>
-              <Text style={styles.statValue}>12</Text>
-              <Text style={styles.statAccent}>+2 this week</Text>
-            </View>
-
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>
-                Repos{"\n"}Analyzed
-              </Text>
-              <Text style={styles.statValue}>8</Text>
-              <Text style={styles.statMuted}>2 in progress</Text>
-            </View>
-
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>
-                Saved{"\n"}Versions
-              </Text>
-              <Text style={styles.statValue}>24</Text>
-              <Text style={styles.statAccent}>across all repos</Text>
-            </View>
-          </View>
-
-          {/* Submit repo */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Submit a repo</Text>
+            <Text style={styles.sectionTitle}>Your Saved READMEs</Text>
 
-            <View style={styles.repoSubmitCard}>
-              <TextInput
-                placeholder="https://github.com/user/repo-name"
-                placeholderTextColor="#3c3489"
-                style={styles.repoInput}
-                autoCapitalize="none"
-              />
+            {isLoading ? (
+              <View style={styles.loadingCard}>
+                <ActivityIndicator color="#1d9e75" />
+                <Text style={styles.loadingText}>
+                  Loading your saved README library...
+                </Text>
+              </View>
+            ) : null}
 
-              <TouchableOpacity style={styles.generateButton}>
-                <Text style={styles.generateButtonText}>Generate README</Text>
-              </TouchableOpacity>
-            </View>
+            {!isLoading && loadError ? (
+              <View style={styles.messageCard}>
+                <Text style={styles.messageTitle}>Couldn&apos;t load READMEs</Text>
+                <Text style={styles.messageText}>{loadError}</Text>
+                <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+                  <Text style={styles.retryButtonText}>Try Again</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {!isLoading && !loadError && readmes.length === 0 ? (
+              <View style={styles.messageCard}>
+                <Text style={styles.messageTitle}>No saved READMEs yet</Text>
+                <Text style={styles.messageText}>
+                  This dashboard now only shows READMEs already stored on your
+                  account.
+                </Text>
+              </View>
+            ) : null}
+
+            {!isLoading && !loadError && readmes.length > 0 ? (
+              <View style={styles.activityList}>
+                {readmes.map((readme) => (
+                  <RepoCard
+                    key={readme.id}
+                    readme={readme}
+                    onView={() => setSelectedReadme(readme)}
+                  />
+                ))}
+              </View>
+            ) : null}
           </View>
 
-          {/* Recent activity */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Recent activity</Text>
-              <TouchableOpacity>
-                <Text style={styles.viewAllText}>View All</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.activityList}>
-              <RepoCard
-                name="portfolio-site"
-                url="github.com/janedev/portfolio-site"
-                tags={["React", "TypeScript", "Vite"]}
-                status="Done"
-                statusVariant="done"
-                time="2 mins ago"
-              />
-
-              <RepoCard
-                name="express-auth-api"
-                url="github.com/janedev/express-auth-api"
-                tags={["Node.js", "Express", "MongoDB"]}
-                status="Processing"
-                statusVariant="processing"
-                time="5 mins ago"
-                disabled
-              />
-
-              <RepoCard
-                name="data-viz-dashboard"
-                url="github.com/janedev/data-viz-dashboard"
-                tags={["Python", "Flask", "D3.js"]}
-                status="Done"
-                statusVariant="done"
-                time="Yesterday"
-              />
-            </View>
-          </View>
-
-          {/* User footer */}
           <View style={styles.userFooter}>
             <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>{userInitials || "JD"}</Text>
+              <Text style={styles.userAvatarText}>{userInitials || "RM"}</Text>
             </View>
-            <Text style={styles.userName}>{[firstName, lastName].filter(Boolean).join(" ") || "Jone Doe"}</Text>
+            <Text style={styles.userName}>
+              {[firstName, lastName].filter(Boolean).join(" ") || "ReadMe User"}
+            </Text>
 
             <TouchableOpacity style={styles.viewButton} onPress={handleLogout}>
               <Text style={styles.viewButtonText}>Log out</Text>
             </TouchableOpacity>
           </View>
-          
         </ScrollView>
       </View>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={selectedReadme !== null}
+        onRequestClose={() => setSelectedReadme(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderText}>
+                <Text style={styles.modalTitle}>
+                  {selectedReadme?.title || "README"}
+                </Text>
+                <Text style={styles.modalMeta}>
+                  {selectedReadme?.repositoryUrl ||
+                    selectedReadme?.repository ||
+                    "Saved README"}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={() => setSelectedReadme(null)}
+              >
+                <Text style={styles.modalCloseButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalContent}
+              contentContainerStyle={styles.modalContentInner}
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={styles.modalDate}>
+                Saved {formatReadmeDate(selectedReadme?.createdAt ?? "")}
+              </Text>
+              <Text style={styles.modalMarkdown}>
+                {selectedReadme?.content || "No README content was stored yet."}
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 function RepoCard({
-  name,
-  url,
-  tags,
-  status,
-  statusVariant,
-  time,
-  disabled = false,
+  readme,
+  onView,
 }: {
-  name: string;
-  url: string;
-  tags: string[];
-  status: string;
-  statusVariant: "done" | "processing";
-  time: string;
-  disabled?: boolean;
+  readme: StoredReadme;
+  onView: () => void;
 }) {
   return (
     <View style={styles.repoCard}>
       <View style={styles.repoTopRow}>
         <View style={styles.repoInfo}>
-          <Text style={styles.repoName}>{name}</Text>
+          <Text style={styles.repoName}>{readme.title}</Text>
           <Text style={styles.repoUrl} numberOfLines={1}>
-            {url}
+            {readme.repositoryUrl || readme.repository || "Saved to your account"}
           </Text>
         </View>
 
-        <View
-          style={[
-            styles.statusBadge,
-            statusVariant === "done"
-              ? styles.doneBadge
-              : styles.processingBadge,
-          ]}
-        >
-          <Text
-            style={[
-              styles.statusBadgeText,
-              statusVariant === "done"
-                ? styles.doneBadgeText
-                : styles.processingBadgeText,
-            ]}
-          >
-            {status}
-          </Text>
+        <View style={[styles.statusBadge, styles.doneBadge]}>
+          <Text style={[styles.statusBadgeText, styles.doneBadgeText]}>Saved</Text>
         </View>
       </View>
 
-      <View style={styles.tagRow}>
-        {tags.map((tag) => (
-          <View key={tag} style={styles.tag}>
-            <Text style={styles.tagText}>{tag}</Text>
-          </View>
-        ))}
-      </View>
+      {readme.tags.length > 0 ? (
+        <View style={styles.tagRow}>
+          {readme.tags.map((tag) => (
+            <View key={`${readme.id}-${tag}`} style={styles.tag}>
+              <Text style={styles.tagText}>{tag}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      <Text style={styles.repoPreview}>{buildPreview(readme.content)}</Text>
 
       <View style={styles.repoBottomRow}>
-        <Text style={styles.repoTime}>{time}</Text>
+        <Text style={styles.repoTime}>{formatReadmeDate(readme.createdAt)}</Text>
 
-        <TouchableOpacity
-          disabled={disabled}
-          style={[
-            styles.viewButton,
-            disabled && styles.viewButtonDisabled,
-          ]}
-        >
-          <Text
-            style={[
-              styles.viewButtonText,
-              disabled && styles.viewButtonTextDisabled,
-            ]}
-          >
-            View README
-          </Text>
+        <TouchableOpacity style={styles.viewButton} onPress={onView}>
+          <Text style={styles.viewButtonText}>View README</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -310,7 +422,6 @@ const styles = StyleSheet.create({
     borderRadius: 140,
     backgroundColor: "rgba(29,158,117,0.07)",
   },
-
   headerCard: {
     backgroundColor: "#1c1a2e",
     borderWidth: 1,
@@ -368,7 +479,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "500",
   },
-
   topNav: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -456,7 +566,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
   },
-
   pageHeader: {
     marginBottom: 24,
   },
@@ -469,44 +578,8 @@ const styles = StyleSheet.create({
     color: "#7f77dd",
     fontSize: 13,
     marginTop: 4,
+    lineHeight: 19,
   },
-
-  statsGrid: {
-    gap: 12,
-    marginBottom: 28,
-  },
-  statCard: {
-    backgroundColor: "#1c1a2e",
-    borderWidth: 0.5,
-    borderColor: "#3c3489",
-    borderRadius: 12,
-    padding: 16,
-  },
-  statLabel: {
-    color: "#7f77dd",
-    fontSize: 11,
-    fontWeight: "500",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    lineHeight: 15,
-  },
-  statValue: {
-    color: "#eeedfe",
-    fontSize: 28,
-    fontWeight: "500",
-    marginTop: 10,
-  },
-  statAccent: {
-    color: "#5dcaa5",
-    fontSize: 10,
-    marginTop: 4,
-  },
-  statMuted: {
-    color: "#afa9ec",
-    fontSize: 10,
-    marginTop: 4,
-  },
-
   section: {
     marginBottom: 28,
   },
@@ -516,43 +589,53 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginBottom: 12,
   },
-  sectionHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  viewAllText: {
-    color: "#7f77dd",
-    fontSize: 12,
-  },
-
-  repoSubmitCard: {
-    backgroundColor: "transparent",
-    gap: 12,
-  },
-  repoInput: {
+  loadingCard: {
     backgroundColor: "#1c1a2e",
     borderWidth: 0.5,
     borderColor: "#3c3489",
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    padding: 24,
+    alignItems: "center",
+    gap: 14,
+  },
+  loadingText: {
+    color: "#afa9ec",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  messageCard: {
+    backgroundColor: "#1c1a2e",
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 12,
+    padding: 18,
+  },
+  messageTitle: {
+    color: "#eeedfe",
+    fontSize: 16,
+    fontWeight: "500",
+    marginBottom: 8,
+  },
+  messageText: {
+    color: "#afa9ec",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  retryButton: {
+    alignSelf: "flex-start",
+    marginTop: 14,
+    backgroundColor: "#252240",
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  retryButtonText: {
     color: "#eeedfe",
     fontSize: 13,
+    fontWeight: "500",
   },
-  generateButton: {
-    backgroundColor: "#534ab7",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  generateButtonText: {
-    color: "#eeedfe",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-
   activityList: {
     gap: 14,
   },
@@ -602,7 +685,12 @@ const styles = StyleSheet.create({
     color: "#afa9ec",
     fontSize: 9,
   },
-
+  repoPreview: {
+    color: "#d4d2f8",
+    fontSize: 12,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
   statusBadge: {
     borderWidth: 0.5,
     paddingHorizontal: 8,
@@ -613,10 +701,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#9fe1cb",
     borderColor: "#085041",
   },
-  processingBadge: {
-    backgroundColor: "#252240",
-    borderColor: "#3c3489",
-  },
   statusBadgeText: {
     fontSize: 8,
     fontWeight: "600",
@@ -624,18 +708,16 @@ const styles = StyleSheet.create({
   doneBadgeText: {
     color: "#085041",
   },
-  processingBadgeText: {
-    color: "#afa9ec",
-  },
-
   repoBottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: 12,
   },
   repoTime: {
     color: "#7f77dd",
     fontSize: 10,
+    flex: 1,
   },
   viewButton: {
     backgroundColor: "#252240",
@@ -644,21 +726,12 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginLeft: 12,
-  },
-  viewButtonDisabled: {
-    backgroundColor: "#1c1a2d",
-    borderColor: "#676670",
   },
   viewButtonText: {
     color: "#eeedfe",
     fontSize: 13,
     fontWeight: "500",
   },
-  viewButtonTextDisabled: {
-    color: "#676670",
-  },
-
   userFooter: {
     flexDirection: "row",
     alignItems: "center",
@@ -683,5 +756,74 @@ const styles = StyleSheet.create({
     color: "#eeedfe",
     fontSize: 13,
     fontWeight: "500",
+    flex: 1,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(12, 10, 20, 0.82)",
+    justifyContent: "center",
+    padding: 18,
+  },
+  modalCard: {
+    maxHeight: "82%",
+    backgroundColor: "#171428",
+    borderWidth: 1,
+    borderColor: "#2a2650",
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#252240",
+  },
+  modalHeaderText: {
+    flex: 1,
+  },
+  modalTitle: {
+    color: "#eeedfe",
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  modalMeta: {
+    color: "#7f77dd",
+    fontSize: 11,
+  },
+  modalCloseButton: {
+    backgroundColor: "#252240",
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  modalCloseButtonText: {
+    color: "#eeedfe",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  modalContent: {
+    paddingHorizontal: 18,
+  },
+  modalContentInner: {
+    paddingTop: 14,
+    paddingBottom: 22,
+  },
+  modalDate: {
+    color: "#5dcaa5",
+    fontSize: 11,
+    marginBottom: 14,
+  },
+  modalMarkdown: {
+    color: "#e8e6ff",
+    fontSize: 13,
+    lineHeight: 22,
   },
 });

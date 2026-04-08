@@ -245,20 +245,6 @@ export default function Login() {
               </Text>
             </TouchableOpacity>
 
-            <View style={styles.dividerRow}>
-              <View style={styles.divider} />
-              <Text style={styles.dividerText}>or continue with</Text>
-              <View style={styles.divider} />
-            </View>
-
-            <TouchableOpacity style={styles.oauthButton}>
-              <Text style={styles.oauthButtonText}>Continue with Github</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.oauthButton}>
-              <Text style={styles.oauthButtonText}>Continue with Google</Text>
-            </TouchableOpacity>
-
             {message ? (
               <View
                 style={[

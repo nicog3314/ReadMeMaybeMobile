@@ -2,6 +2,88 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+function normalizeReadmes(rawReadmes = [], fallbackCreatedAt = new Date()) {
+    if (!Array.isArray(rawReadmes)) {
+        return [];
+    }
+
+    return rawReadmes
+        .map((entry, index) => {
+            if (typeof entry === 'string') {
+                return {
+                    id: `readme-${index}`,
+                    title: `README ${index + 1}`,
+                    repository: '',
+                    repositoryUrl: '',
+                    content: entry,
+                    tags: [],
+                    createdAt: fallbackCreatedAt,
+                };
+            }
+
+            const source = entry && typeof entry.toObject === 'function' ? entry.toObject() : entry || {};
+            const content = source.content || source.markdown || source.readme || source.text || '';
+            const title =
+                source.title ||
+                source.name ||
+                source.repositoryName ||
+                source.repoName ||
+                source.repository ||
+                `README ${index + 1}`;
+            const repository = source.repository || source.repositoryName || source.repoName || title;
+            const repositoryUrl = source.repositoryUrl || source.repoUrl || source.url || '';
+            const rawTags = Array.isArray(source.tags)
+                ? source.tags
+                : Array.isArray(source.topics)
+                    ? source.topics
+                    : [];
+
+            return {
+                id: String(source._id || `readme-${index}`),
+                title,
+                repository,
+                repositoryUrl,
+                content,
+                tags: rawTags
+                    .filter((tag) => typeof tag === 'string' && tag.trim())
+                    .map((tag) => tag.trim()),
+                createdAt: source.createdAt || source.updatedAt || fallbackCreatedAt,
+            };
+        })
+        .filter((entry) => entry.content || entry.repository || entry.title);
+}
+
+function getStoredReadmes(source) {
+    if (Array.isArray(source.readmes) && source.readmes.length > 0) {
+        return source.readmes;
+    }
+
+    if (Array.isArray(source.generatedReadmes) && source.generatedReadmes.length > 0) {
+        return source.generatedReadmes;
+    }
+
+    if (Array.isArray(source.savedReadmes) && source.savedReadmes.length > 0) {
+        return source.savedReadmes;
+    }
+
+    return Array.isArray(source.readmes) ? source.readmes : [];
+}
+
+function serializeUser(user) {
+    const source = user && typeof user.toObject === 'function' ? user.toObject() : user;
+    const storedReadmes = getStoredReadmes(source);
+
+    return {
+        _id: source._id,
+        FirstName: source.FirstName,
+        LastName: source.LastName,
+        Login: source.Login,
+        Email: source.Email,
+        createdAt: source.createdAt,
+        readmes: normalizeReadmes(storedReadmes, source.createdAt),
+    };
+}
+
 const register = async (req, res) => {
     try{
         const{FirstName, LastName, Login, Email, Password} = req.body;
@@ -35,7 +117,7 @@ const register = async (req, res) => {
         const jwtToken = jwt.sign({id: newUser._id}, process.env.JWT_SECRET, {expiresIn: '1h'});
 
         //return on success
-        res.status(201).json({jwtToken, user: newUser});
+        res.status(201).json({jwtToken, user: serializeUser(newUser)});
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'});
@@ -63,7 +145,7 @@ const login = async (req, res) => {
         const jwtToken = jwt.sign({id: returnUser._id}, process.env.JWT_SECRET, {expiresIn: '1h'});
 
         // return on success
-        res.status(201).json({jwtToken, user: returnUser});
+        res.status(201).json({jwtToken, user: serializeUser(returnUser)});
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'})
@@ -72,13 +154,27 @@ const login = async (req, res) => {
 
 const me = async(req, res) => {
     try{
-        const user = await User.findById(req.user.id).select('-hashedPassword');
+        const user = await User.findById(req.user.id);
         if (!user) return res.status(400).json({message:'User not found.'});
-        res.status(200).json(user);
+        res.status(200).json(serializeUser(user));
     }catch (err){
         console.error(err);
         res.status(500).json({message: 'Server Error'});
     }
 };
 
-module.exports = {register, login, me};
+const readmes = async(req, res) => {
+    try{
+        const user = await User.findById(req.user.id).select('readmes generatedReadmes savedReadmes createdAt');
+        if (!user) return res.status(400).json({message:'User not found.'});
+
+        res.status(200).json({
+            readmes: normalizeReadmes(getStoredReadmes(user), user.createdAt),
+        });
+    }catch (err){
+        console.error(err);
+        res.status(500).json({message: 'Server Error'});
+    }
+};
+
+module.exports = {register, login, me, readmes};

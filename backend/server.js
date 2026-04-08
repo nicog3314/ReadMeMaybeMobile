@@ -1,22 +1,34 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 const PORT = process.env.PORT || 5000;
 
+mongoose.connection.on('connecting', () => {
+    console.log('Mongoose is connecting...');
+});
+
+mongoose.connection.on('connected', () => {
+    console.log('Mongoose connected.');
+});
+
+mongoose.connection.on('error', (err) => {
+    console.error('Mongoose connection error:', err.message);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.log('Mongoose disconnected.');
+});
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.set('trust proxy', 1);
 
-const MongoClient = require('mongodb').MongoClient;
-let client;
-
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
-
-const hardcodedMongoUri = process.env.MONGODB_URI;
 
 async function getMongoUri() {
     if (process.env.MONGODB_URI) {
@@ -45,9 +57,11 @@ async function getMongoUri() {
 
 async function initDatabase() {
     const mongoUri = await getMongoUri();
-    mongoose.connect(mongoUri)
-    .then(() => console.log('MongoDB connected (Mongoose)'))
-    .catch(err => console.error(err));
+    console.log('Attempting MongoDB connection...');
+    await mongoose.connect(mongoUri, {
+        serverSelectionTimeoutMS: 5000,
+    });
+    console.log('MongoDB connected (Mongoose)');
 }
 
 initDatabase()
@@ -61,43 +75,6 @@ initDatabase()
         console.error('Failed to connect to MongoDB:', err);
         process.exit(1);
     })
-
-/*mongoose.connect(hardcodedMongoUri)
-  .then(() => console.log('MongoDB connected (Mongoose)'))
-  .catch(err => console.error(err));
-*/
-
-/*async function initializeDatabase() {
-    let url = '';
-
-    try {
-        url = await getMongoUri();
-    }
-    catch (error) {
-        if (error && error.name === 'CredentialsProviderError') {
-            console.warn('AWS credentials not found, using hardcoded Mongo URI for local run.');
-            url = hardcodedMongoUri;
-        }
-        else {
-            throw error;
-        }
-    }
-
-    if (!url) {
-        throw new Error('Secret must contain MONGODB_URI');
-    }
-
-    const clientOptions = {
-        tls: true,
-        tlsAllowInvalidCertificates: false,
-        serverSelectionTimeoutMS: 5000,
-    };
-
-    client = new MongoClient(url, clientOptions);
-    await client.connect();
-    console.log('Successfully connected to MongoDB!');
-}
-*/
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader(
