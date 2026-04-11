@@ -48,9 +48,22 @@ function normalizeReadmes(rawReadmes = [], fallbackCreatedAt = new Date()) {
                     .filter((tag) => typeof tag === 'string' && tag.trim())
                     .map((tag) => tag.trim()),
                 createdAt: source.createdAt || source.updatedAt || fallbackCreatedAt,
+                updatedAt: source.updatedAt || source.createdAt || fallbackCreatedAt,
             };
         })
         .filter((entry) => entry.content || entry.repository || entry.title);
+}
+
+function buildStoredReadmes(rawReadmes = [], fallbackCreatedAt = new Date()) {
+    return normalizeReadmes(rawReadmes, fallbackCreatedAt).map((entry) => ({
+        title: entry.title,
+        repository: entry.repository,
+        repositoryUrl: entry.repositoryUrl,
+        content: entry.content,
+        tags: entry.tags,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt || entry.createdAt,
+    }));
 }
 
 function getStoredReadmes(source) {
@@ -67,6 +80,51 @@ function getStoredReadmes(source) {
     }
 
     return Array.isArray(source.readmes) ? source.readmes : [];
+}
+
+function getLegacyReadmes(source) {
+    if (Array.isArray(source.generatedReadmes) && source.generatedReadmes.length > 0) {
+        return source.generatedReadmes;
+    }
+
+    if (Array.isArray(source.savedReadmes) && source.savedReadmes.length > 0) {
+        return source.savedReadmes;
+    }
+
+    return [];
+}
+
+async function ensurePrimaryReadmes(user) {
+    if (Array.isArray(user.readmes) && user.readmes.length > 0) {
+        return;
+    }
+
+    const legacyReadmes = getLegacyReadmes(user);
+
+    if (legacyReadmes.length === 0) {
+        return;
+    }
+
+    user.readmes = buildStoredReadmes(legacyReadmes, user.createdAt);
+    await user.save();
+}
+
+function normalizeReadmeInput(body = {}) {
+    const rawTags = Array.isArray(body.tags)
+        ? body.tags
+        : typeof body.tags === 'string'
+            ? body.tags.split(',')
+            : [];
+
+    return {
+        title: typeof body.title === 'string' ? body.title.trim() : '',
+        repository: typeof body.repository === 'string' ? body.repository.trim() : '',
+        repositoryUrl: typeof body.repositoryUrl === 'string' ? body.repositoryUrl.trim() : '',
+        content: typeof body.content === 'string' ? body.content : '',
+        tags: rawTags
+            .filter((tag) => typeof tag === 'string' && tag.trim())
+            .map((tag) => tag.trim()),
+    };
 }
 
 function serializeUser(user) {
@@ -168,8 +226,10 @@ const readmes = async(req, res) => {
         const user = await User.findById(req.user.id).select('readmes generatedReadmes savedReadmes createdAt');
         if (!user) return res.status(400).json({message:'User not found.'});
 
+        await ensurePrimaryReadmes(user);
+
         res.status(200).json({
-            readmes: normalizeReadmes(getStoredReadmes(user), user.createdAt),
+            readmes: normalizeReadmes(user.readmes, user.createdAt),
         });
     }catch (err){
         console.error(err);
@@ -177,4 +237,85 @@ const readmes = async(req, res) => {
     }
 };
 
-module.exports = {register, login, me, readmes};
+const createReadme = async(req, res) => {
+    try{
+        const user = await User.findById(req.user.id).select('readmes generatedReadmes savedReadmes createdAt');
+        if (!user) return res.status(400).json({message:'User not found.'});
+
+        await ensurePrimaryReadmes(user);
+
+        const nextReadme = normalizeReadmeInput(req.body);
+
+        if (!nextReadme.content.trim() && !nextReadme.title && !nextReadme.repository) {
+            return res.status(400).json({message: 'README content or title is required.'});
+        }
+
+        user.readmes.unshift(nextReadme);
+        await user.save();
+
+        const createdReadme = user.readmes[0];
+
+        res.status(201).json({
+            readme: normalizeReadmes([createdReadme], user.createdAt)[0],
+            readmes: normalizeReadmes(user.readmes, user.createdAt),
+        });
+    }catch (err){
+        console.error(err);
+        res.status(500).json({message: 'Server Error'});
+    }
+};
+
+const updateReadme = async(req, res) => {
+    try{
+        const user = await User.findById(req.user.id).select('readmes generatedReadmes savedReadmes createdAt');
+        if (!user) return res.status(400).json({message:'User not found.'});
+
+        await ensurePrimaryReadmes(user);
+
+        const readme = user.readmes.id(req.params.id);
+        if (!readme) return res.status(404).json({message:'README not found.'});
+
+        const nextReadme = normalizeReadmeInput(req.body);
+
+        readme.title = nextReadme.title;
+        readme.repository = nextReadme.repository;
+        readme.repositoryUrl = nextReadme.repositoryUrl;
+        readme.content = nextReadme.content;
+        readme.tags = nextReadme.tags;
+
+        await user.save();
+
+        res.status(200).json({
+            readme: normalizeReadmes([readme], user.createdAt)[0],
+            readmes: normalizeReadmes(user.readmes, user.createdAt),
+        });
+    }catch (err){
+        console.error(err);
+        res.status(500).json({message: 'Server Error'});
+    }
+};
+
+const deleteReadme = async(req, res) => {
+    try{
+        const user = await User.findById(req.user.id).select('readmes generatedReadmes savedReadmes createdAt');
+        if (!user) return res.status(400).json({message:'User not found.'});
+
+        await ensurePrimaryReadmes(user);
+
+        const readme = user.readmes.id(req.params.id);
+        if (!readme) return res.status(404).json({message:'README not found.'});
+
+        readme.deleteOne();
+        await user.save();
+
+        res.status(200).json({
+            message: 'README deleted.',
+            readmes: normalizeReadmes(user.readmes, user.createdAt),
+        });
+    }catch (err){
+        console.error(err);
+        res.status(500).json({message: 'Server Error'});
+    }
+};
+
+module.exports = {register, login, me, readmes, createReadme, updateReadme, deleteReadme};

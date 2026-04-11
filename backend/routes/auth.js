@@ -8,6 +8,9 @@ router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.get('/me', authMiddleware.authMiddleware, authController.me);
 router.get('/readmes', authMiddleware.authMiddleware, authController.readmes);
+router.post('/readmes', authMiddleware.authMiddleware, authController.createReadme);
+router.put('/readmes/:id', authMiddleware.authMiddleware, authController.updateReadme);
+router.delete('/readmes/:id', authMiddleware.authMiddleware, authController.deleteReadme);
 
 
 module.exports = router;

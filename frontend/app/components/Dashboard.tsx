@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
@@ -88,7 +89,7 @@ export default function Dashboard() {
     .join("")
     .toUpperCase();
 
-  async function loadDashboardData() {
+  const loadDashboardData = useCallback(async () => {
     const raw = await AsyncStorage.getItem("user_data");
 
     if (!raw) {
@@ -141,32 +142,36 @@ export default function Dashboard() {
 
     setReadmes(nextReadmes);
     setLoadError("");
-  }
+  }, [router]);
 
-  useEffect(() => {
-    let isMounted = true;
+  useFocusEffect(
+    useCallback(() => {
+      let isActive = true;
 
-    async function bootstrapDashboard() {
-      try {
-        await loadDashboardData();
-      } catch (error) {
-        if (isMounted) {
-          setReadmes([]);
-          setLoadError("Unable to load your saved READMEs right now.");
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
+      async function bootstrapDashboard() {
+        setIsLoading(true);
+
+        try {
+          await loadDashboardData();
+        } catch (error) {
+          if (isActive) {
+            setReadmes([]);
+            setLoadError("Unable to load your saved READMEs right now.");
+          }
+        } finally {
+          if (isActive) {
+            setIsLoading(false);
+          }
         }
       }
-    }
 
-    bootstrapDashboard();
+      bootstrapDashboard();
 
-    return () => {
-      isMounted = false;
-    };
-  }, [router]);
+      return () => {
+        isActive = false;
+      };
+    }, [loadDashboardData])
+  );
 
   async function handleRetry() {
     setIsLoading(true);
@@ -218,7 +223,10 @@ export default function Dashboard() {
                 <Text style={styles.activeNavText}>Dashboard</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.navItem}>
+              <TouchableOpacity
+                style={styles.navItem}
+                onPress={() => router.push("/my-readmes")}
+              >
                 <View style={styles.reposIcon}>
                   <View style={styles.repoLineFull} />
                   <View style={styles.repoLineMedium} />

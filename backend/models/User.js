@@ -1,5 +1,15 @@
 const mongoose = require('mongoose');
 
+const readmeSchema = new mongoose.Schema({
+    title: { type: String, trim: true, default: '' },
+    repository: { type: String, trim: true, default: '' },
+    repositoryUrl: { type: String, trim: true, default: '' },
+    content: { type: String, default: '' },
+    tags: { type: [String], default: [] }
+}, {
+    timestamps: true
+});
+
 const userSchema = new mongoose.Schema({
     FirstName: { type: String, required: true, trim: true },
     LastName: { type: String, required: true, trim: true },
@@ -30,7 +40,10 @@ const userSchema = new mongoose.Schema({
         ReadmesGenerated: { type: Number, default: 0, min: 0 },
         LastGenerationAt: { type: Date, default: null }
     },
-    LastLoginAt: { type: Date, default: null }
+    LastLoginAt: { type: Date, default: null },
+    readmes: { type: [readmeSchema], default: [] },
+    generatedReadmes: { type: [readmeSchema], default: [] },
+    savedReadmes: { type: [readmeSchema], default: [] }
 }, {
     timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' },
     toJSON: {
