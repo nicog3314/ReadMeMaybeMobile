@@ -7,11 +7,11 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import { Image } from "expo-image";
 
 export default function Login() {
   const router = useRouter();
@@ -118,7 +118,7 @@ export default function Login() {
             <Image
               source={require("../../assets/images/icon.png")}
               style={styles.logo}
-              contentFit="cover"
+              alt="ReadMeMaybe logo"
             />
             <Text style={styles.logoText}>ReadMeMaybe</Text>
           </View>
@@ -185,7 +185,7 @@ export default function Login() {
                   <Text style={styles.label}>FIRST NAME</Text>
                   <TextInput
                     placeholder="Your First Name"
-                    placeholderTextColor="#534AB7"
+                    placeholderTextColor="#B7B2F7"
                     value={firstName}
                     onChangeText={setFirstName}
                     style={styles.input}
@@ -196,7 +196,7 @@ export default function Login() {
                   <Text style={styles.label}>LAST NAME</Text>
                   <TextInput
                     placeholder="Your Last Name"
-                    placeholderTextColor="#534AB7"
+                    placeholderTextColor="#B7B2F7"
                     value={lastName}
                     onChangeText={setLastName}
                     style={styles.input}
@@ -209,7 +209,7 @@ export default function Login() {
               <Text style={styles.label}>EMAIL</Text>
               <TextInput
                 placeholder="you@example.com"
-                placeholderTextColor="#534AB7"
+                placeholderTextColor="#B7B2F7"
                 value={loginName}
                 onChangeText={setLoginName}
                 style={styles.input}
@@ -222,7 +222,7 @@ export default function Login() {
               <Text style={styles.label}>PASSWORD</Text>
               <TextInput
                 placeholder="........"
-                placeholderTextColor="#534AB7"
+                placeholderTextColor="#B7B2F7"
                 value={loginPassword}
                 onChangeText={setLoginPassword}
                 style={styles.input}
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   badgeText: {
-    color: "#7F77DD",
+    color: "#D4D2F8",
     fontSize: 12,
   },
   heroSection: {
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   heroDescription: {
-    color: "#7F77DD",
+    color: "#D4D2F8",
     fontSize: 16,
     lineHeight: 24,
     marginTop: 14,
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
   },
   featureText: {
     flex: 1,
-    color: "#AFA9EC",
+    color: "#D4D2F8",
     fontSize: 14,
     lineHeight: 20,
   },
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   formSubtitle: {
-    color: "#7F77DD",
+    color: "#D4D2F8",
     fontSize: 16,
     marginTop: 8,
     marginBottom: 20,
@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#5A53B7",
   },
   tabText: {
-    color: "#7F77DD",
+    color: "#D4D2F8",
     fontSize: 16,
     fontWeight: "500",
   },
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: {
-    color: "#AFA9EC",
+    color: "#D4D2F8",
     fontSize: 13,
     marginBottom: 8,
     letterSpacing: 1,
@@ -449,13 +449,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   forgotText: {
-    color: "#7F77DD",
+    color: "#D4D2F8",
     fontSize: 14,
   },
   submitButton: {
     marginTop: 6,
     borderRadius: 12,
-    backgroundColor: "#1D8E75",
+    backgroundColor: "#0F6B57",
     paddingVertical: 14,
     alignItems: "center",
   },
@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#252240",
   },
   dividerText: {
-    color: "#7F77DD",
+    color: "#D4D2F8",
     fontSize: 14,
   },
   oauthButton: {

@@ -11,13 +11,13 @@ import { useRouter } from "expo-router";
 
 // Team data
 const team = [
-  { initials: "SA", name: "Santiago Aguilar", role: "Project Manager / Deployment", color: "#1d9e75", text: "#e1f5ee" },
-  { initials: "RC", name: "Reyjay Collazo", role: "Project Manager", color: "#1d9e75", text: "#04342c" },
-  { initials: "AS", name: "Aiden Sperr", role: "Frontend Developer", color: "#7f77dd", text: "#eeedfe" },
-  { initials: "NG", name: "Nicole Gonzalez", role: "Mobile Developer", color: "#1d9e75", text: "#e1f5ee" },
-  { initials: "KD", name: "Kiara Delgado", role: "Auth Developer / Slides", color: "#afa9ec", text: "#26215c" },
-  { initials: "SY", name: "Selin Yilmaz", role: "Database Engineer / AI", color: "#7f77dd", text: "#eeedfe" },
-  { initials: "WS", name: "William Sharpe", role: "AI Engineer", color: "#1d9e75", text: "#04342c" },
+  { initials: "SA", name: "Santiago Aguilar", role: "Project Manager / Deployment", color: "#1d9e75", text: "#f5fffb" },
+  { initials: "RC", name: "Reyjay Collazo", role: "Project Manager", color: "#1d9e75", text: "#f5fffb" },
+  { initials: "AS", name: "Aiden Sperr", role: "Frontend Developer", color: "#7f77dd", text: "#f8f7ff" },
+  { initials: "NG", name: "Nicole Gonzalez", role: "Mobile Developer", color: "#1d9e75", text: "#f5fffb" },
+  { initials: "KD", name: "Kiara Delgado", role: "Auth Developer / Slides", color: "#afa9ec", text: "#1e1947" },
+  { initials: "SY", name: "Selin Yilmaz", role: "Database Engineer / AI", color: "#7f77dd", text: "#f8f7ff" },
+  { initials: "WS", name: "William Sharpe", role: "AI Engineer", color: "#1d9e75", text: "#f5fffb" },
 ];
 
 export default function About() {
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   subtitle: {
-    color: "#7f77dd",
+    color: "#d4d2f8",
     marginTop: 4,
   },
 
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   navText: {
-    color: "#7f77dd",
+    color: "#d4d2f8",
   },
   activeNavText: {
     color: "#eeedfe",
@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
   },
 
   intro: {
-    color: "#afa9ec",
+    color: "#d4d2f8",
     marginBottom: 20,
   },
 
