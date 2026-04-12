@@ -28,7 +28,9 @@ app.use(express.json());
 app.set('trust proxy', 1);
 
 const authRoutes = require('./routes/auth');
+const repoRoutes = require('./routes/repos');
 app.use('/api/auth', authRoutes);
+app.use(repoRoutes);
 
 async function getMongoUri() {
     if (process.env.MONGODB_URI) {

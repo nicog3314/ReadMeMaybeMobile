@@ -2,12 +2,11 @@ import React from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import AppHeader from "./AppHeader";
 
 // Team data
 const team = [
@@ -21,34 +20,18 @@ const team = [
 ];
 
 export default function About() {
-  const router = useRouter();
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
         <View style={styles.bgBlob} />
 
         <ScrollView contentContainerStyle={styles.content}>
-          
-          {/* Header */}
+          <AppHeader activeRoute="about" />
+
           <View style={styles.header}>
             <Text style={styles.title}>About Us</Text>
-            <Text style={styles.subtitle}>
-              The team behind ReadMeMaybe
-            </Text>
+            <Text style={styles.subtitle}>The team behind ReadMeMaybe</Text>
           </View>
-
-          {/* Navigation Row */}
-          <View style={styles.navRow}>
-            <TouchableOpacity onPress={() => router.push("/dashboard")}>
-              <Text style={styles.navText}>Dashboard</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.activeNavText}>About Us</Text>
-          </View>
-
-          {/* Divider */}
-          <View style={styles.divider} />
 
           {/* Intro */}
           <Text style={styles.intro}>
@@ -128,25 +111,6 @@ const styles = StyleSheet.create({
   subtitle: {
     color: "#d4d2f8",
     marginTop: 4,
-  },
-
-  navRow: {
-    flexDirection: "row",
-    gap: 16,
-    marginVertical: 12,
-  },
-  navText: {
-    color: "#d4d2f8",
-  },
-  activeNavText: {
-    color: "#eeedfe",
-    fontWeight: "600",
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: "#252240",
-    marginVertical: 16,
   },
 
   intro: {

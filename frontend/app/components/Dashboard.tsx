@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -12,82 +12,47 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import AppHeader from "./AppHeader";
+import {
+  buildPreview,
+  type DashboardStats,
+  formatReadmeDate,
+  formatStatDate,
+  getRepoTimestamp,
+  normalizeStoredRepo,
+  type StoredRepoRecord,
+  timeAgo,
+} from "../lib/storedRepos";
 
 type StoredUser = {
   firstName?: string;
-  lastName?: string;
   token?: string;
 };
 
-type StoredReadme = {
-  id: string;
-  title: string;
-  repository: string;
-  repositoryUrl: string;
-  content: string;
-  tags: string[];
-  createdAt: string;
+const emptyStats: DashboardStats = {
+  totalReadmes: 0,
+  totalRepos: 0,
+  thisWeekCount: 0,
 };
-
-function normalizeReadme(raw: any, index: number): StoredReadme {
-  return {
-    id: String(raw?.id ?? raw?._id ?? `readme-${index}`),
-    title:
-      raw?.title ??
-      raw?.name ??
-      raw?.repository ??
-      raw?.repositoryName ??
-      `README ${index + 1}`,
-    repository: raw?.repository ?? raw?.repositoryName ?? raw?.title ?? "",
-    repositoryUrl: raw?.repositoryUrl ?? raw?.repoUrl ?? raw?.url ?? "",
-    content: raw?.content ?? raw?.markdown ?? raw?.readme ?? raw?.text ?? "",
-    tags: Array.isArray(raw?.tags)
-      ? raw.tags.filter((tag: unknown) => typeof tag === "string")
-      : [],
-    createdAt: String(raw?.createdAt ?? raw?.updatedAt ?? ""),
-  };
-}
-
-function formatReadmeDate(dateValue: string) {
-  const date = new Date(dateValue);
-
-  if (Number.isNaN(date.getTime())) {
-    return "Saved recently";
-  }
-
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-function buildPreview(content: string) {
-  const preview = content.replace(/\s+/g, " ").trim();
-
-  if (!preview) {
-    return "Saved README content will appear here when available.";
-  }
-
-  return preview.length > 140 ? `${preview.slice(0, 140)}...` : preview;
-}
 
 export default function Dashboard() {
   const router = useRouter();
   const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [readmes, setReadmes] = useState<StoredReadme[]>([]);
+  const [repos, setRepos] = useState<StoredRepoRecord[]>([]);
+  const [stats, setStats] = useState<DashboardStats>(emptyStats);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [selectedReadme, setSelectedReadme] = useState<StoredReadme | null>(
+  const [selectedRepo, setSelectedRepo] = useState<StoredRepoRecord | null>(
     null
   );
 
-  const userInitials = [firstName, lastName]
-    .map((name) => name.trim().charAt(0))
-    .filter(Boolean)
-    .join("")
-    .toUpperCase();
+  const recentRepos = useMemo(() => {
+    return [...repos]
+      .sort((left, right) => getRepoTimestamp(right) - getRepoTimestamp(left))
+      .slice(0, 3);
+  }, [repos]);
+
+  const latestRepo = recentRepos[0] ?? null;
 
   const loadDashboardData = useCallback(async () => {
     const raw = await AsyncStorage.getItem("user_data");
@@ -99,7 +64,6 @@ export default function Dashboard() {
 
     const storedUser: StoredUser = JSON.parse(raw);
     setFirstName(storedUser.firstName ?? "");
-    setLastName(storedUser.lastName ?? "");
 
     if (!storedUser.token) {
       await AsyncStorage.removeItem("user_data");
@@ -108,19 +72,17 @@ export default function Dashboard() {
     }
 
     if (!process.env.EXPO_PUBLIC_API_URL) {
-      setReadmes([]);
-      setLoadError("Missing API URL for loading saved READMEs.");
+      setRepos([]);
+      setStats(emptyStats);
+      setLoadError("Missing API URL for loading your generated repositories.");
       return;
     }
 
-    const response = await fetch(
-      `${process.env.EXPO_PUBLIC_API_URL}/api/auth/readmes`,
-      {
-        headers: {
-          Authorization: `Bearer ${storedUser.token}`,
-        },
-      }
-    );
+    const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/repos`, {
+      headers: {
+        Authorization: `Bearer ${storedUser.token}`,
+      },
+    });
 
     const data = await response.json();
 
@@ -131,16 +93,18 @@ export default function Dashboard() {
     }
 
     if (!response.ok) {
-      setReadmes([]);
-      setLoadError(data.message || "Unable to load your saved READMEs.");
+      setRepos([]);
+      setStats(emptyStats);
+      setLoadError(data.message || "Unable to load your generated repositories.");
       return;
     }
 
-    const nextReadmes = Array.isArray(data.readmes)
-      ? data.readmes.map(normalizeReadme)
+    const nextRepos = Array.isArray(data.repos)
+      ? data.repos.map(normalizeStoredRepo)
       : [];
 
-    setReadmes(nextReadmes);
+    setRepos(nextRepos);
+    setStats(data.stats ?? emptyStats);
     setLoadError("");
   }, [router]);
 
@@ -153,10 +117,13 @@ export default function Dashboard() {
 
         try {
           await loadDashboardData();
-        } catch (error) {
+        } catch {
           if (isActive) {
-            setReadmes([]);
-            setLoadError("Unable to load your saved READMEs right now.");
+            setRepos([]);
+            setStats(emptyStats);
+            setLoadError(
+              "Unable to load your generated repositories right now."
+            );
           }
         } finally {
           if (isActive) {
@@ -165,7 +132,7 @@ export default function Dashboard() {
         }
       }
 
-      bootstrapDashboard();
+      void bootstrapDashboard();
 
       return () => {
         isActive = false;
@@ -179,165 +146,156 @@ export default function Dashboard() {
 
     try {
       await loadDashboardData();
-    } catch (error) {
-      setReadmes([]);
-      setLoadError("Unable to load your saved READMEs right now.");
+    } catch {
+      setRepos([]);
+      setStats(emptyStats);
+      setLoadError("Unable to load your generated repositories right now.");
     } finally {
       setIsLoading(false);
     }
-  }
-
-  async function handleLogout() {
-    await AsyncStorage.removeItem("user_data");
-    router.replace("/login");
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
         <View style={styles.bgBlobTopRight} />
+        <View style={styles.bgBlobBottomLeft} />
+        <View style={styles.bgBlobBottomRight} />
 
         <ScrollView
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.headerCard}>
-            <View style={styles.logoRow}>
-              <View style={styles.logoBox}>
-                <View style={styles.logoLineFull} />
-                <View style={styles.logoLineShort} />
-                <View style={styles.logoLineMedium} />
-                <View style={styles.logoLineTiny} />
-              </View>
-              <Text style={styles.brandText}>ReadMeMaybe</Text>
-            </View>
-
-            <View style={styles.topNav}>
-              <TouchableOpacity style={styles.activeNavItem}>
-                <View style={styles.dashboardIcon}>
-                  <View style={styles.dashboardSquare} />
-                  <View style={styles.dashboardSquare} />
-                  <View style={styles.dashboardSquare} />
-                  <View style={styles.dashboardSquare} />
-                </View>
-                <Text style={styles.activeNavText}>Dashboard</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.navItem}
-                onPress={() => router.push("/my-readmes")}
-              >
-                <View style={styles.reposIcon}>
-                  <View style={styles.repoLineFull} />
-                  <View style={styles.repoLineMedium} />
-                  <View style={styles.repoLineShort} />
-                </View>
-                <Text style={styles.navText}>Saved READMEs</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.navItem}
-                onPress={() => router.push("/about")}
-              >
-                <View style={styles.aboutIconCircle}>
-                  <Text style={styles.aboutIconText}>i</Text>
-                </View>
-                <Text style={styles.navText}>About Us</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <AppHeader activeRoute="dashboard" />
 
           <View style={styles.pageHeader}>
             <Text style={styles.pageTitle}>Dashboard</Text>
             <Text style={styles.pageSubtitle}>
-              Welcome back, {firstName || "there"}. View your saved READMEs
-              below.
+              Welcome back, {firstName || "there"}.
             </Text>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your Saved READMEs</Text>
-
-            {isLoading ? (
-              <View style={styles.loadingCard}>
-                <ActivityIndicator color="#1d9e75" />
-                <Text style={styles.loadingText}>
-                  Loading your saved README library...
-                </Text>
-              </View>
-            ) : null}
-
-            {!isLoading && loadError ? (
-              <View style={styles.messageCard}>
-                <Text style={styles.messageTitle}>Couldn&apos;t load READMEs</Text>
-                <Text style={styles.messageText}>{loadError}</Text>
-                <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
-                  <Text style={styles.retryButtonText}>Try Again</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
-            {!isLoading && !loadError && readmes.length === 0 ? (
-              <View style={styles.messageCard}>
-                <Text style={styles.messageTitle}>No saved READMEs yet</Text>
-                <Text style={styles.messageText}>
-                  This dashboard now only shows READMEs already stored on your
-                  account.
-                </Text>
-              </View>
-            ) : null}
-
-            {!isLoading && !loadError && readmes.length > 0 ? (
-              <View style={styles.activityList}>
-                {readmes.map((readme) => (
-                  <RepoCard
-                    key={readme.id}
-                    readme={readme}
-                    onView={() => setSelectedReadme(readme)}
-                  />
-                ))}
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.userFooter}>
-            <View style={styles.userAvatar}>
-              <Text style={styles.userAvatarText}>{userInitials || "RM"}</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>
+                READMEs{"\n"}
+                Generated
+              </Text>
+              <Text style={styles.statValue}>
+                {isLoading ? "-" : stats.totalReadmes}
+              </Text>
+              <Text style={styles.statAccentText}>
+                {isLoading ? "" : `+${stats.thisWeekCount} active this week`}
+              </Text>
             </View>
-            <Text style={styles.userName}>
-              {[firstName, lastName].filter(Boolean).join(" ") || "ReadMe User"}
-            </Text>
 
-            <TouchableOpacity style={styles.viewButton} onPress={handleLogout}>
-              <Text style={styles.viewButtonText}>Log out</Text>
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>
+                Repos{"\n"}
+                Saved
+              </Text>
+              <Text style={styles.statValue}>
+                {isLoading ? "-" : stats.totalRepos}
+              </Text>
+              <Text style={styles.statMutedText}>synced from the website</Text>
+            </View>
+
+            <View style={styles.statCard}>
+              <Text style={styles.statLabel}>
+                Last{"\n"}
+                Generated
+              </Text>
+              <Text style={styles.statValue}>
+                {isLoading ? "-" : formatStatDate(latestRepo?.updatedAt ?? "")}
+              </Text>
+              <Text style={styles.statMutedText} numberOfLines={1}>
+                {isLoading ? "" : latestRepo?.name || "no activity yet"}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent activity</Text>
+
+            <TouchableOpacity onPress={() => router.push("/my-readmes")}>
+              <Text style={styles.sectionLink}>View All</Text>
             </TouchableOpacity>
           </View>
+
+          {isLoading ? (
+            <View style={styles.activityList}>
+              {[0, 1, 2].map((index) => (
+                <View key={index} style={styles.loadingCard}>
+                  <ActivityIndicator color="#1d9e75" />
+                  <Text style={styles.loadingText}>Loading recent activity...</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {!isLoading && loadError ? (
+            <View style={styles.messageCard}>
+              <Text style={styles.messageTitle}>
+                Couldn&apos;t load repositories
+              </Text>
+              <Text style={styles.messageText}>{loadError}</Text>
+              <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+                <Text style={styles.retryButtonText}>Try Again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          {!isLoading && !loadError && repos.length === 0 ? (
+            <View style={styles.messageCard}>
+              <Text style={styles.messageTitle}>No generated repos yet</Text>
+              <Text style={styles.messageText}>
+                The app is now reading the website&apos;s saved repository records.
+                If you generated READMEs on the web and still see nothing here,
+                make sure the mobile app is pointing at the same backend and
+                database.
+              </Text>
+            </View>
+          ) : null}
+
+          {!isLoading && !loadError && recentRepos.length > 0 ? (
+            <View style={styles.activityList}>
+              {recentRepos.map((repo) => (
+                <RecentActivityCard
+                  key={repo.id}
+                  repo={repo}
+                  onView={() => setSelectedRepo(repo)}
+                />
+              ))}
+            </View>
+          ) : null}
+
+          
         </ScrollView>
       </View>
 
       <Modal
         animationType="slide"
         transparent
-        visible={selectedReadme !== null}
-        onRequestClose={() => setSelectedReadme(null)}
+        visible={selectedRepo !== null}
+        onRequestClose={() => setSelectedRepo(null)}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderText}>
                 <Text style={styles.modalTitle}>
-                  {selectedReadme?.title || "README"}
+                  {selectedRepo?.name || "README"}
                 </Text>
                 <Text style={styles.modalMeta}>
-                  {selectedReadme?.repositoryUrl ||
-                    selectedReadme?.repository ||
-                    "Saved README"}
+                  {selectedRepo?.remoteUrl ||
+                    selectedRepo?.fullName ||
+                    "Saved repository"}
                 </Text>
               </View>
 
               <TouchableOpacity
                 style={styles.modalCloseButton}
-                onPress={() => setSelectedReadme(null)}
+                onPress={() => setSelectedRepo(null)}
               >
                 <Text style={styles.modalCloseButtonText}>Close</Text>
               </TouchableOpacity>
@@ -349,10 +307,10 @@ export default function Dashboard() {
               showsVerticalScrollIndicator={false}
             >
               <Text style={styles.modalDate}>
-                Saved {formatReadmeDate(selectedReadme?.createdAt ?? "")}
+                Saved {formatReadmeDate(selectedRepo?.updatedAt ?? "")}
               </Text>
               <Text style={styles.modalMarkdown}>
-                {selectedReadme?.content || "No README content was stored yet."}
+                {selectedRepo?.readme || "No README content was stored yet."}
               </Text>
             </ScrollView>
           </View>
@@ -362,47 +320,75 @@ export default function Dashboard() {
   );
 }
 
-function RepoCard({
-  readme,
+function RecentActivityCard({
+  repo,
   onView,
 }: {
-  readme: StoredReadme;
+  repo: StoredRepoRecord;
   onView: () => void;
 }) {
+  const hasReadme = Boolean(repo.readme.trim());
+
   return (
     <View style={styles.repoCard}>
       <View style={styles.repoTopRow}>
         <View style={styles.repoInfo}>
-          <Text style={styles.repoName}>{readme.title}</Text>
+          <Text style={styles.repoName}>{repo.name}</Text>
           <Text style={styles.repoUrl} numberOfLines={1}>
-            {readme.repositoryUrl || readme.repository || "Saved to your account"}
+            {(repo.remoteUrl || repo.fullName || repo.name).replace(
+              /^https?:\/\//,
+              ""
+            )}
           </Text>
         </View>
 
-        <View style={[styles.statusBadge, styles.doneBadge]}>
-          <Text style={[styles.statusBadgeText, styles.doneBadgeText]}>Saved</Text>
+        <View
+          style={[
+            styles.statusBadge,
+            hasReadme ? styles.doneBadge : styles.emptyBadge,
+          ]}
+        >
+          <Text
+            style={[
+              styles.statusBadgeText,
+              hasReadme ? styles.doneBadgeText : styles.emptyBadgeText,
+            ]}
+          >
+            {hasReadme ? "Done" : "Pending"}
+          </Text>
         </View>
       </View>
 
-      {readme.tags.length > 0 ? (
+      {repo.languages.length > 0 ? (
         <View style={styles.tagRow}>
-          {readme.tags.map((tag) => (
-            <View key={`${readme.id}-${tag}`} style={styles.tag}>
-              <Text style={styles.tagText}>{tag}</Text>
+          {repo.languages.slice(0, 3).map((language) => (
+            <View key={`${repo.id}-${language}`} style={styles.tag}>
+              <Text style={styles.tagText}>{language}</Text>
             </View>
           ))}
         </View>
       ) : null}
 
-      <Text style={styles.repoPreview}>{buildPreview(readme.content)}</Text>
+      <Text style={styles.repoPreview}>{buildPreview(repo.readme)}</Text>
 
       <View style={styles.repoBottomRow}>
-        <Text style={styles.repoTime}>{formatReadmeDate(readme.createdAt)}</Text>
+        <View style={styles.repoMetaStack}>
+          <Text style={styles.repoTime}>{timeAgo(repo.updatedAt)}</Text>
+          <Text style={styles.repoMetaCaption}>
+            {repo.generationNumber > 0
+              ? `v${repo.generationNumber}`
+              : repo.visibility}
+          </Text>
+        </View>
 
-        <TouchableOpacity style={styles.viewButton} onPress={onView}>
-          <Text style={styles.viewButtonText}>View README</Text>
+        <TouchableOpacity style={styles.cardButton} onPress={onView}>
+          <Text style={styles.cardButtonText}>View README</Text>
         </TouchableOpacity>
       </View>
+
+      {!hasReadme && repo.failureReason ? (
+        <Text style={styles.failureText}>{repo.failureReason}</Text>
+      ) : null}
     </View>
   );
 }
@@ -428,7 +414,25 @@ const styles = StyleSheet.create({
     width: 280,
     height: 280,
     borderRadius: 140,
-    backgroundColor: "rgba(29,158,117,0.07)",
+    backgroundColor: "rgba(29,158,117,0.10)",
+  },
+  bgBlobBottomLeft: {
+    position: "absolute",
+    bottom: -90,
+    left: -40,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: "rgba(83,74,183,0.12)",
+  },
+  bgBlobBottomRight: {
+    position: "absolute",
+    bottom: -60,
+    right: 40,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(29,158,117,0.08)",
   },
   headerCard: {
     backgroundColor: "#1c1a2e",
@@ -588,14 +592,160 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 19,
   },
-  section: {
-    marginBottom: 28,
+  statsGrid: {
+    gap: 12,
+    marginBottom: 24,
+  },
+  statCard: {
+    backgroundColor: "#1c1a2e",
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 12,
+    padding: 16,
+  },
+  statLabel: {
+    color: "#7f77dd",
+    fontSize: 11,
+    fontWeight: "500",
+    textTransform: "uppercase",
+    marginBottom: 10,
+  },
+  statValue: {
+    color: "#eeedfe",
+    fontSize: 26,
+    fontWeight: "500",
+    marginBottom: 6,
+  },
+  statAccentText: {
+    color: "#5dcaa5",
+    fontSize: 11,
+  },
+  statMutedText: {
+    color: "#afa9ec",
+    fontSize: 11,
+  },
+  generateCard: {
+    position: "relative",
+    overflow: "hidden",
+    backgroundColor: "#171328",
+    borderWidth: 1,
+    borderColor: "#30295a",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 26,
+  },
+  generateGlow: {
+    position: "absolute",
+    top: -60,
+    right: -40,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: "rgba(83,74,183,0.18)",
+  },
+  generateHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 16,
+  },
+  generateHeaderText: {
+    flex: 1,
+  },
+  generateEyebrow: {
+    color: "#7f77dd",
+    fontSize: 11,
+    fontWeight: "500",
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  generateTitle: {
+    color: "#f6f4ff",
+    fontSize: 22,
+    fontWeight: "500",
+    marginBottom: 8,
+  },
+  generateText: {
+    color: "#c8c2ef",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  webOnlyBadge: {
+    backgroundColor: "#163229",
+    borderWidth: 0.5,
+    borderColor: "#2b6b59",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  webOnlyBadgeText: {
+    color: "#9fe1cb",
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  featureRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 18,
+  },
+  featurePill: {
+    backgroundColor: "#221d38",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  featurePillText: {
+    color: "#afa9ec",
+    fontSize: 11,
+  },
+  generateActions: {
+    gap: 10,
+  },
+  primaryButton: {
+    backgroundColor: "#534ab7",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  primaryButtonText: {
+    color: "#eeedfe",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  secondaryButton: {
+    backgroundColor: "#141125",
+    borderWidth: 0.5,
+    borderColor: "#332d59",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    alignItems: "center",
+  },
+  secondaryButtonText: {
+    color: "#afa9ec",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 12,
   },
   sectionTitle: {
     color: "#eeedfe",
     fontSize: 17,
     fontWeight: "500",
-    marginBottom: 12,
+  },
+  sectionLink: {
+    color: "#7f77dd",
+    fontSize: 12,
+    fontWeight: "500",
   },
   loadingCard: {
     backgroundColor: "#1c1a2e",
@@ -617,6 +767,7 @@ const styles = StyleSheet.create({
     borderColor: "#3c3489",
     borderRadius: 12,
     padding: 18,
+    marginBottom: 12,
   },
   messageTitle: {
     color: "#eeedfe",
@@ -646,6 +797,7 @@ const styles = StyleSheet.create({
   },
   activityList: {
     gap: 14,
+    marginBottom: 18,
   },
   repoCard: {
     backgroundColor: "#1c1a2e",
@@ -709,6 +861,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#9fe1cb",
     borderColor: "#085041",
   },
+  emptyBadge: {
+    backgroundColor: "#2f1b28",
+    borderColor: "#7a3a57",
+  },
   statusBadgeText: {
     fontSize: 8,
     fontWeight: "600",
@@ -716,18 +872,28 @@ const styles = StyleSheet.create({
   doneBadgeText: {
     color: "#085041",
   },
+  emptyBadgeText: {
+    color: "#e0a4be",
+  },
   repoBottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
   },
+  repoMetaStack: {
+    flex: 1,
+    gap: 2,
+  },
   repoTime: {
     color: "#7f77dd",
     fontSize: 10,
-    flex: 1,
   },
-  viewButton: {
+  repoMetaCaption: {
+    color: "#afa9ec",
+    fontSize: 9,
+  },
+  cardButton: {
     backgroundColor: "#252240",
     borderWidth: 0.5,
     borderColor: "#3c3489",
@@ -735,16 +901,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  viewButtonText: {
+  cardButtonText: {
     color: "#eeedfe",
     fontSize: 13,
     fontWeight: "500",
   },
+  failureText: {
+    color: "#e0a4be",
+    fontSize: 10,
+    lineHeight: 16,
+    marginTop: 10,
+  },
   userFooter: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
-    paddingTop: 6,
+    gap: 10,
+    backgroundColor: "#171428",
+    borderWidth: 0.5,
+    borderColor: "#2a2650",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 16,
   },
   userAvatar: {
     width: 32,
@@ -753,18 +930,38 @@ const styles = StyleSheet.create({
     backgroundColor: "#534ab7",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
   },
   userAvatarText: {
     color: "#eeedfe",
     fontSize: 12,
     fontWeight: "600",
   },
+  userTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
   userName: {
     color: "#eeedfe",
     fontSize: 13,
     fontWeight: "500",
-    flex: 1,
+  },
+  userCaption: {
+    color: "#7f77dd",
+    fontSize: 10,
+    marginTop: 2,
+  },
+  footerButton: {
+    backgroundColor: "#252240",
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  footerButtonText: {
+    color: "#eeedfe",
+    fontSize: 13,
+    fontWeight: "500",
   },
   modalBackdrop: {
     flex: 1,

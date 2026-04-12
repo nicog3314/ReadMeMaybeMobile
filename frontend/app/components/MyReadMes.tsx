@@ -13,96 +13,28 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import AppHeader from "./AppHeader";
+import {
+  buildPreview,
+  formatReadmeDate,
+  normalizeStoredRepo,
+  type StoredRepoRecord,
+  timeAgo,
+} from "../lib/storedRepos";
 
 type StoredUser = {
   token?: string;
 };
 
-type StoredReadme = {
-  id: string;
-  title: string;
-  repository: string;
-  repositoryUrl: string;
-  content: string;
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-};
-
-function normalizeReadme(raw: any, index: number): StoredReadme {
-  return {
-    id: String(raw?.id ?? raw?._id ?? `readme-${index}`),
-    title:
-      raw?.title ??
-      raw?.name ??
-      raw?.repository ??
-      raw?.repositoryName ??
-      `README ${index + 1}`,
-    repository: raw?.repository ?? raw?.repositoryName ?? raw?.title ?? "",
-    repositoryUrl: raw?.repositoryUrl ?? raw?.repoUrl ?? raw?.url ?? "",
-    content: raw?.content ?? raw?.markdown ?? raw?.readme ?? raw?.text ?? "",
-    tags: Array.isArray(raw?.tags)
-      ? raw.tags.filter((tag: unknown) => typeof tag === "string")
-      : [],
-    createdAt: String(raw?.createdAt ?? raw?.updatedAt ?? ""),
-    updatedAt: String(raw?.updatedAt ?? raw?.createdAt ?? ""),
-  };
-}
-
-function timeAgo(dateValue: string) {
-  const date = new Date(dateValue);
-
-  if (Number.isNaN(date.getTime())) {
-    return "recently";
-  }
-
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
-
-  if (minutes < 1) {
-    return "just now";
-  }
-
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-
-  const days = Math.floor(hours / 24);
-  return days === 1 ? "Yesterday" : `${days}d ago`;
-}
-
-function buildPreview(content: string) {
-  const preview = content.replace(/\s+/g, " ").trim();
-
-  if (!preview) {
-    return "This README does not have any saved content yet.";
-  }
-
-  return preview.length > 140 ? `${preview.slice(0, 140)}...` : preview;
-}
-
 export default function MyReadMes() {
   const router = useRouter();
-  const [readmes, setReadmes] = useState<StoredReadme[]>([]);
+  const [repos, setRepos] = useState<StoredRepoRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
-  const [selectedReadme, setSelectedReadme] = useState<StoredReadme | null>(
+  const [selectedRepo, setSelectedRepo] = useState<StoredRepoRecord | null>(
     null
   );
-  const [draft, setDraft] = useState("");
-  const [actionMessage, setActionMessage] = useState("");
-
-  const showActionMessage = useCallback((message: string) => {
-    setActionMessage(message);
-    setTimeout(() => setActionMessage(""), 2500);
-  }, []);
 
   const getSessionToken = useCallback(async () => {
     const raw = await AsyncStorage.getItem("user_data");
@@ -123,7 +55,7 @@ export default function MyReadMes() {
     return storedUser.token;
   }, [router]);
 
-  const loadReadmes = useCallback(async () => {
+  const loadRepos = useCallback(async () => {
     const token = await getSessionToken();
 
     if (!token) {
@@ -131,19 +63,16 @@ export default function MyReadMes() {
     }
 
     if (!process.env.EXPO_PUBLIC_API_URL) {
-      setReadmes([]);
-      setLoadError("Missing API URL for loading saved READMEs.");
+      setRepos([]);
+      setLoadError("Missing API URL for loading generated repositories.");
       return [];
     }
 
-    const response = await fetch(
-      `${process.env.EXPO_PUBLIC_API_URL}/api/auth/readmes`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
+    const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/api/repos`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
     const data = await response.json();
 
@@ -154,18 +83,18 @@ export default function MyReadMes() {
     }
 
     if (!response.ok) {
-      setReadmes([]);
-      setLoadError(data.message || "Unable to load your saved READMEs.");
+      setRepos([]);
+      setLoadError(data.message || "Unable to load your generated repositories.");
       return [];
     }
 
-    const nextReadmes = Array.isArray(data.readmes)
-      ? data.readmes.map(normalizeReadme)
+    const nextRepos = Array.isArray(data.repos)
+      ? data.repos.map(normalizeStoredRepo)
       : [];
 
-    setReadmes(nextReadmes);
+    setRepos(nextRepos);
     setLoadError("");
-    return nextReadmes;
+    return nextRepos;
   }, [getSessionToken, router]);
 
   useFocusEffect(
@@ -176,11 +105,11 @@ export default function MyReadMes() {
         setIsLoading(true);
 
         try {
-          await loadReadmes();
-        } catch (error) {
+          await loadRepos();
+        } catch {
           if (isActive) {
-            setReadmes([]);
-            setLoadError("Unable to load your saved READMEs right now.");
+            setRepos([]);
+            setLoadError("Unable to load your generated repositories right now.");
           }
         } finally {
           if (isActive) {
@@ -189,181 +118,42 @@ export default function MyReadMes() {
         }
       }
 
-      bootstrapReadmes();
+      void bootstrapReadmes();
 
       return () => {
         isActive = false;
       };
-    }, [loadReadmes])
+    }, [loadRepos])
   );
 
-  const filteredReadmes = useMemo(() => {
+  const filteredRepos = useMemo(() => {
     const query = search.trim().toLowerCase();
 
     if (!query) {
-      return readmes;
+      return repos;
     }
 
-    return readmes.filter((readme) => {
+    return repos.filter((repo) => {
       return (
-        readme.title.toLowerCase().includes(query) ||
-        readme.repository.toLowerCase().includes(query) ||
-        readme.repositoryUrl.toLowerCase().includes(query) ||
-        readme.tags.some((tag) => tag.toLowerCase().includes(query))
+        repo.name.toLowerCase().includes(query) ||
+        repo.fullName.toLowerCase().includes(query) ||
+        repo.remoteUrl.toLowerCase().includes(query) ||
+        repo.languages.some((language) =>
+          language.toLowerCase().includes(query)
+        )
       );
     });
-  }, [readmes, search]);
-
-  function openReadme(readme: StoredReadme) {
-    setSelectedReadme(readme);
-    setDraft(readme.content);
-  }
-
-  function closeReadme() {
-    setSelectedReadme(null);
-    setDraft("");
-  }
-
-  function replaceReadme(
-    updatedReadme: StoredReadme,
-    shouldSyncSelectedReadme = false
-  ) {
-    setReadmes((currentReadmes) =>
-      currentReadmes.map((readme) =>
-        readme.id === updatedReadme.id ? updatedReadme : readme
-      )
-    );
-
-    if (shouldSyncSelectedReadme) {
-      setSelectedReadme(updatedReadme);
-      setDraft(updatedReadme.content);
-    }
-  }
-
-  async function handleDelete(readmeId: string) {
-    const token = await getSessionToken();
-
-    if (!token || !process.env.EXPO_PUBLIC_API_URL) {
-      return;
-    }
-
-    const response = await fetch(
-      `${process.env.EXPO_PUBLIC_API_URL}/api/auth/readmes/${readmeId}`,
-      {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      showActionMessage(data.message || "Unable to delete this README.");
-      return;
-    }
-
-    setReadmes((currentReadmes) =>
-      currentReadmes.filter((readme) => readme.id !== readmeId)
-    );
-
-    if (selectedReadme?.id === readmeId) {
-      closeReadme();
-    }
-
-    showActionMessage("README removed from the list.");
-  }
-
-  async function handleRegenerate(readme: StoredReadme) {
-    const token = await getSessionToken();
-
-    if (!token || !process.env.EXPO_PUBLIC_API_URL) {
-      return;
-    }
-
-    const response = await fetch(
-      `${process.env.EXPO_PUBLIC_API_URL}/api/auth/readmes/${readme.id}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: readme.title,
-          repository: readme.repository,
-          repositoryUrl: readme.repositoryUrl,
-          tags: readme.tags,
-          content: readme.content
-            ? `${readme.content}\n\n<!-- regenerated -->`
-            : `# ${readme.title}\n\nAuto-generated README.`,
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      showActionMessage(data.message || "Unable to regenerate this README.");
-      return;
-    }
-
-    const updatedReadme = normalizeReadme(data.readme ?? {}, 0);
-    replaceReadme(updatedReadme, selectedReadme?.id === readme.id);
-    showActionMessage(`Regenerated ${readme.title} successfully.`);
-  }
-
-  async function handleSave() {
-    if (!selectedReadme) {
-      return;
-    }
-
-    const token = await getSessionToken();
-
-    if (!token || !process.env.EXPO_PUBLIC_API_URL) {
-      return;
-    }
-
-    const response = await fetch(
-      `${process.env.EXPO_PUBLIC_API_URL}/api/auth/readmes/${selectedReadme.id}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: selectedReadme.title,
-          repository: selectedReadme.repository,
-          repositoryUrl: selectedReadme.repositoryUrl,
-          tags: selectedReadme.tags,
-          content: draft,
-        }),
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      showActionMessage(data.message || "Unable to save this README.");
-      return;
-    }
-
-    const updatedReadme = normalizeReadme(data.readme ?? {}, 0);
-    replaceReadme(updatedReadme, true);
-    showActionMessage("README saved.");
-  }
+  }, [repos, search]);
 
   async function handleRetry() {
     setIsLoading(true);
     setLoadError("");
 
     try {
-      await loadReadmes();
-    } catch (error) {
-      setReadmes([]);
-      setLoadError("Unable to load your saved READMEs right now.");
+      await loadRepos();
+    } catch {
+      setRepos([]);
+      setLoadError("Unable to load your generated repositories right now.");
     } finally {
       setIsLoading(false);
     }
@@ -378,78 +168,44 @@ export default function MyReadMes() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.headerCard}>
-            <View style={styles.logoRow}>
-              <View style={styles.logoBox}>
-                <View style={styles.logoLineFull} />
-                <View style={styles.logoLineShort} />
-                <View style={styles.logoLineMedium} />
-                <View style={styles.logoLineTiny} />
-              </View>
-              <Text style={styles.brandText}>ReadMeMaybe</Text>
-            </View>
-
-            <View style={styles.topNav}>
-              <TouchableOpacity
-                style={styles.navItem}
-                onPress={() => router.push("/dashboard")}
-              >
-                <Text style={styles.navText}>Dashboard</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.activeNavItem}>
-                <Text style={styles.activeNavText}>My READMEs</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.navItem}
-                onPress={() => router.push("/about")}
-              >
-                <Text style={styles.navText}>About Us</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <AppHeader activeRoute="my-readmes" />
 
           <View style={styles.pageHeader}>
             <Text style={styles.pageTitle}>My READMEs</Text>
             <Text style={styles.pageSubtitle}>
-              Browse, edit, and manage the same saved READMEs shown on your
-              dashboard.
+              Browse the same generated repository records stored for the web
+              dashboard. This mobile view is read-only.
             </Text>
           </View>
 
           <View style={styles.searchCard}>
             <TextInput
-              placeholder="Search saved READMEs..."
+              placeholder="Search generated repos..."
               placeholderTextColor="#B7B2F7"
               value={search}
               onChangeText={setSearch}
               style={styles.searchInput}
             />
             <Text style={styles.searchMeta}>
-              {filteredReadmes.length} README
-              {filteredReadmes.length === 1 ? "" : "s"} found
+              {filteredRepos.length} repo{filteredRepos.length === 1 ? "" : "s"}{" "}
+              found
             </Text>
           </View>
-
-          {actionMessage ? (
-            <View style={styles.messageCard}>
-              <Text style={styles.messageText}>{actionMessage}</Text>
-            </View>
-          ) : null}
 
           {isLoading ? (
             <View style={styles.loadingCard}>
               <ActivityIndicator color="#1d9e75" />
               <Text style={styles.loadingText}>
-                Loading your saved README library...
+                Loading your generated README library...
               </Text>
             </View>
           ) : null}
 
           {!isLoading && loadError ? (
             <View style={styles.errorCard}>
-              <Text style={styles.errorTitle}>Couldn&apos;t load READMEs</Text>
+              <Text style={styles.errorTitle}>
+                Couldn&apos;t load repositories
+              </Text>
               <Text style={styles.errorText}>{loadError}</Text>
               <TouchableOpacity
                 style={styles.secondaryButton}
@@ -460,95 +216,82 @@ export default function MyReadMes() {
             </View>
           ) : null}
 
-          {!isLoading && !loadError && filteredReadmes.length === 0 ? (
+          {!isLoading && !loadError && filteredRepos.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>No saved READMEs yet</Text>
+              <Text style={styles.emptyTitle}>No generated repos yet</Text>
               <Text style={styles.emptyText}>
-                Once a README is stored on your account, it will appear here and
-                on the dashboard.
+                Once the website stores generated repositories in the database,
+                they will appear here for read-only review in the app.
               </Text>
             </View>
           ) : null}
 
-          {!isLoading && !loadError && filteredReadmes.length > 0 ? (
+          {!isLoading && !loadError && filteredRepos.length > 0 ? (
             <View style={styles.repoList}>
-              {filteredReadmes.map((readme) => {
-                const hasContent = Boolean(readme.content.trim());
+              {filteredRepos.map((repo) => {
+                const hasReadme = Boolean(repo.readme.trim());
 
                 return (
-                  <View key={readme.id} style={styles.repoCard}>
+                  <View key={repo.id} style={styles.repoCard}>
                     <View style={styles.repoTopRow}>
                       <View style={styles.repoInfo}>
-                        <Text style={styles.repoName}>{readme.title}</Text>
+                        <Text style={styles.repoName}>{repo.name}</Text>
                         <Text style={styles.repoUrl} numberOfLines={1}>
-                          {readme.repositoryUrl ||
-                            readme.repository ||
-                            "Saved to your account"}
+                          {(repo.remoteUrl || repo.fullName || repo.name).replace(
+                            /^https?:\/\//,
+                            ""
+                          )}
                         </Text>
                       </View>
 
                       <View
                         style={[
                           styles.statusBadge,
-                          hasContent ? styles.doneBadge : styles.emptyBadge,
+                          hasReadme ? styles.doneBadge : styles.emptyBadge,
                         ]}
                       >
                         <Text
                           style={[
                             styles.statusBadgeText,
-                            hasContent
+                            hasReadme
                               ? styles.doneBadgeText
                               : styles.emptyBadgeText,
                           ]}
                         >
-                          {hasContent ? "Saved" : "Draft"}
+                          {hasReadme ? "Saved" : "Pending"}
                         </Text>
                       </View>
                     </View>
 
-                    {readme.tags.length > 0 ? (
+                    {repo.languages.length > 0 ? (
                       <View style={styles.tagRow}>
-                        {readme.tags.map((tag) => (
-                          <View key={`${readme.id}-${tag}`} style={styles.tag}>
-                            <Text style={styles.tagText}>{tag}</Text>
+                        {repo.languages.slice(0, 3).map((language) => (
+                          <View key={`${repo.id}-${language}`} style={styles.tag}>
+                            <Text style={styles.tagText}>{language}</Text>
                           </View>
                         ))}
                       </View>
                     ) : null}
 
                     <Text style={styles.repoPreview}>
-                      {buildPreview(readme.content)}
+                      {buildPreview(repo.readme)}
                     </Text>
+
+                    {!hasReadme && repo.failureReason ? (
+                      <Text style={styles.failureText}>{repo.failureReason}</Text>
+                    ) : null}
 
                     <View style={styles.repoBottomRow}>
                       <Text style={styles.repoTime}>
-                        Updated {timeAgo(readme.updatedAt || readme.createdAt)}
+                        Updated {timeAgo(repo.updatedAt)}
                       </Text>
 
-                      <View style={styles.actionRow}>
-                        <TouchableOpacity
-                          style={styles.secondaryButton}
-                          onPress={() => openReadme(readme)}
-                        >
-                          <Text style={styles.secondaryButtonText}>View</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.secondaryButton}
-                          onPress={() => handleRegenerate(readme)}
-                        >
-                          <Text style={styles.secondaryButtonText}>
-                            Regenerate
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.deleteButton}
-                          onPress={() => handleDelete(readme.id)}
-                        >
-                          <Text style={styles.deleteButtonText}>Delete</Text>
-                        </TouchableOpacity>
-                      </View>
+                      <TouchableOpacity
+                        style={styles.secondaryButton}
+                        onPress={() => setSelectedRepo(repo)}
+                      >
+                        <Text style={styles.secondaryButtonText}>View</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 );
@@ -561,69 +304,43 @@ export default function MyReadMes() {
       <Modal
         animationType="slide"
         transparent
-        visible={selectedReadme !== null}
-        onRequestClose={closeReadme}
+        visible={selectedRepo !== null}
+        onRequestClose={() => setSelectedRepo(null)}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderText}>
                 <Text style={styles.modalTitle}>
-                  {selectedReadme?.title ?? "README"}
+                  {selectedRepo?.name ?? "README"}
                 </Text>
                 <Text style={styles.modalMeta}>
-                  {selectedReadme?.repositoryUrl ||
-                    selectedReadme?.repository ||
+                  {selectedRepo?.remoteUrl ||
+                    selectedRepo?.fullName ||
                     "Saved repository"}
                 </Text>
               </View>
 
               <TouchableOpacity
                 style={styles.modalCloseButton}
-                onPress={closeReadme}
+                onPress={() => setSelectedRepo(null)}
               >
                 <Text style={styles.modalCloseButtonText}>Close</Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.editorLabel}>Markdown</Text>
-            <TextInput
-              multiline
-              value={draft}
-              onChangeText={setDraft}
-              style={styles.editorInput}
-              placeholder="README content will appear here."
-              placeholderTextColor="#B7B2F7"
-            />
-
-            <Text style={styles.editorLabel}>Preview</Text>
             <ScrollView
               style={styles.previewCard}
               contentContainerStyle={styles.previewCardContent}
               showsVerticalScrollIndicator={false}
             >
+              <Text style={styles.previewDate}>
+                Saved {formatReadmeDate(selectedRepo?.updatedAt ?? "")}
+              </Text>
               <Text style={styles.previewText}>
-                {draft.trim() || "Nothing to preview yet."}
+                {selectedRepo?.readme.trim() || "No README content was stored yet."}
               </Text>
             </ScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={handleSave}
-              >
-                <Text style={styles.secondaryButtonText}>Save</Text>
-              </TouchableOpacity>
-
-              {selectedReadme ? (
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={() => handleRegenerate(selectedReadme)}
-                >
-                  <Text style={styles.primaryButtonText}>Regenerate</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
           </View>
         </View>
       </Modal>
@@ -641,70 +358,74 @@ const styles = StyleSheet.create({
     backgroundColor: "#13111e",
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    padding: 20,
     paddingBottom: 28,
   },
   bgBlobTopRight: {
     position: "absolute",
-    top: -70,
+    top: -80,
     right: -80,
-    width: 280,
-    height: 280,
-    borderRadius: 140,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
     backgroundColor: "rgba(29,158,117,0.08)",
   },
   headerCard: {
-    backgroundColor: "#171428",
-    borderRadius: 20,
+    backgroundColor: "#1c1a2e",
     borderWidth: 1,
     borderColor: "#252240",
+    borderRadius: 16,
     padding: 18,
-    marginBottom: 20,
-    gap: 18,
+    marginBottom: 24,
   },
   logoRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    marginBottom: 18,
   },
   logoBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 33,
+    height: 32,
     backgroundColor: "#1d9e75",
-    justifyContent: "center",
+    borderRadius: 8,
     paddingHorizontal: 7,
-    gap: 3,
+    justifyContent: "center",
+    marginRight: 12,
   },
   logoLineFull: {
-    height: 3,
-    width: "100%",
-    borderRadius: 999,
+    height: 2,
     backgroundColor: "#d9d9d9",
+    borderRadius: 999,
+    width: "100%",
+    marginBottom: 3,
   },
   logoLineShort: {
-    height: 3,
-    width: "60%",
-    borderRadius: 999,
+    height: 2,
     backgroundColor: "#d9d9d9",
+    borderRadius: 999,
+    width: "65%",
+    opacity: 0.8,
+    marginBottom: 3,
   },
   logoLineMedium: {
-    height: 3,
-    width: "78%",
-    borderRadius: 999,
+    height: 2,
     backgroundColor: "#d9d9d9",
+    borderRadius: 999,
+    width: "80%",
+    opacity: 0.6,
+    marginBottom: 3,
   },
   logoLineTiny: {
-    height: 3,
-    width: "45%",
-    borderRadius: 999,
+    height: 2,
     backgroundColor: "#d9d9d9",
+    borderRadius: 999,
+    width: "50%",
+    opacity: 0.4,
   },
   brandText: {
     color: "#eeedfe",
     fontSize: 22,
-    fontWeight: "600",
+    fontWeight: "500",
   },
   topNav: {
     flexDirection: "row",
@@ -712,347 +433,289 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   navItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#252240",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   activeNavItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#1d9e75",
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#252240",
+    borderLeftWidth: 3,
+    borderLeftColor: "#1d9e75",
   },
   navText: {
-    color: "#d4d2f8",
-    fontSize: 14,
+    color: "#7f77dd",
+    fontSize: 13,
     fontWeight: "500",
   },
   activeNavText: {
     color: "#eeedfe",
-    fontSize: 14,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
   },
   pageHeader: {
-    marginBottom: 18,
+    marginBottom: 20,
   },
   pageTitle: {
     color: "#eeedfe",
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: "600",
-    marginBottom: 6,
   },
   pageSubtitle: {
     color: "#d4d2f8",
-    fontSize: 15,
-    lineHeight: 22,
+    marginTop: 4,
+    lineHeight: 20,
   },
   searchCard: {
     backgroundColor: "#1c1a2e",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#252240",
-    padding: 16,
-    marginBottom: 14,
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
   },
   searchInput: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#3C3489",
-    backgroundColor: "#13111e",
-    color: "#EEEDFE",
+    backgroundColor: "#141125",
+    borderWidth: 0.5,
+    borderColor: "#332d59",
+    borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 16,
+    color: "#eeedfe",
     marginBottom: 10,
   },
   searchMeta: {
-    color: "#d4d2f8",
-    fontSize: 13,
-  },
-  messageCard: {
-    marginBottom: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(29,158,117,0.5)",
-    backgroundColor: "rgba(29,158,117,0.1)",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  messageText: {
-    color: "#eeedfe",
-    fontSize: 14,
+    color: "#afa9ec",
+    fontSize: 12,
   },
   loadingCard: {
     backgroundColor: "#1c1a2e",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#252240",
-    padding: 18,
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 12,
+    padding: 24,
     alignItems: "center",
-    gap: 12,
-    marginBottom: 14,
+    gap: 14,
   },
   loadingText: {
-    color: "#d4d2f8",
-    fontSize: 14,
+    color: "#afa9ec",
+    fontSize: 13,
+    textAlign: "center",
   },
   errorCard: {
-    backgroundColor: "rgba(239,68,68,0.1)",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "rgba(248,113,113,0.4)",
+    backgroundColor: "#1c1a2e",
+    borderWidth: 0.5,
+    borderColor: "#7a3a57",
+    borderRadius: 12,
     padding: 18,
-    marginBottom: 14,
-    gap: 10,
   },
   errorTitle: {
     color: "#eeedfe",
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "500",
+    marginBottom: 8,
   },
   errorText: {
-    color: "#f2c6c6",
-    fontSize: 14,
-    lineHeight: 21,
+    color: "#e0a4be",
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 12,
   },
   emptyCard: {
     backgroundColor: "#1c1a2e",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#252240",
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 12,
     padding: 18,
-    marginBottom: 14,
-    gap: 8,
   },
   emptyTitle: {
     color: "#eeedfe",
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "500",
+    marginBottom: 8,
   },
   emptyText: {
-    color: "#d4d2f8",
-    fontSize: 14,
-    lineHeight: 21,
+    color: "#afa9ec",
+    fontSize: 13,
+    lineHeight: 20,
   },
   repoList: {
     gap: 14,
   },
   repoCard: {
     backgroundColor: "#1c1a2e",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#252240",
-    padding: 18,
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 12,
+    padding: 16,
   },
   repoTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     gap: 12,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   repoInfo: {
     flex: 1,
+    minWidth: 0,
   },
   repoName: {
     color: "#eeedfe",
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "500",
     marginBottom: 4,
   },
   repoUrl: {
-    color: "#d4d2f8",
-    fontSize: 12,
+    color: "#7f77dd",
+    fontSize: 10,
   },
   statusBadge: {
+    borderWidth: 0.5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
     alignSelf: "flex-start",
   },
   doneBadge: {
     backgroundColor: "#9fe1cb",
-    borderWidth: 1,
     borderColor: "#085041",
   },
   emptyBadge: {
-    backgroundColor: "#252240",
-    borderWidth: 1,
-    borderColor: "#3c3489",
+    backgroundColor: "#2f1b28",
+    borderColor: "#7a3a57",
   },
   statusBadgeText: {
-    fontSize: 11,
+    fontSize: 8,
     fontWeight: "600",
   },
   doneBadgeText: {
     color: "#085041",
   },
   emptyBadgeText: {
-    color: "#d4d2f8",
+    color: "#e0a4be",
   },
   tagRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 14,
   },
   tag: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#3c3489",
     backgroundColor: "#252240",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
   tagText: {
-    color: "#d4d2f8",
-    fontSize: 11,
+    color: "#afa9ec",
+    fontSize: 9,
   },
   repoPreview: {
-    color: "#afa9ec",
-    fontSize: 14,
-    lineHeight: 21,
+    color: "#d4d2f8",
+    fontSize: 12,
+    lineHeight: 19,
     marginBottom: 14,
+  },
+  failureText: {
+    color: "#e0a4be",
+    fontSize: 10,
+    lineHeight: 16,
+    marginBottom: 12,
   },
   repoBottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     gap: 12,
-    flexWrap: "wrap",
   },
   repoTime: {
-    color: "#d4d2f8",
-    fontSize: 12,
-  },
-  actionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  primaryButton: {
-    borderRadius: 12,
-    backgroundColor: "#1d9e75",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  primaryButtonText: {
-    color: "#eeedfe",
-    fontSize: 14,
-    fontWeight: "600",
+    color: "#7f77dd",
+    fontSize: 10,
+    flex: 1,
   },
   secondaryButton: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#3A336F",
     backgroundColor: "#252240",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   secondaryButtonText: {
     color: "#eeedfe",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "500",
-  },
-  deleteButton: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(248,113,113,0.4)",
-    backgroundColor: "rgba(239,68,68,0.1)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  deleteButtonText: {
-    color: "#f8b4b4",
-    fontSize: 14,
-    fontWeight: "600",
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(8,7,26,0.78)",
+    backgroundColor: "rgba(12, 10, 20, 0.82)",
     justifyContent: "center",
     padding: 18,
   },
   modalCard: {
-    maxHeight: "90%",
+    maxHeight: "82%",
     backgroundColor: "#171428",
-    borderRadius: 22,
     borderWidth: 1,
-    borderColor: "#252240",
-    padding: 20,
+    borderColor: "#2a2650",
+    borderRadius: 18,
+    overflow: "hidden",
   },
   modalHeader: {
     flexDirection: "row",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: 12,
-    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#252240",
   },
   modalHeaderText: {
     flex: 1,
   },
   modalTitle: {
     color: "#eeedfe",
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: "600",
     marginBottom: 4,
   },
   modalMeta: {
-    color: "#d4d2f8",
-    fontSize: 12,
+    color: "#7f77dd",
+    fontSize: 11,
   },
   modalCloseButton: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#3A336F",
     backgroundColor: "#252240",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    alignSelf: "flex-start",
+    borderWidth: 0.5,
+    borderColor: "#3c3489",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   modalCloseButtonText: {
     color: "#eeedfe",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "500",
   },
-  editorLabel: {
-    color: "#d4d2f8",
-    fontSize: 12,
-    letterSpacing: 1,
-    marginBottom: 8,
-    marginTop: 6,
-  },
-  editorInput: {
-    minHeight: 180,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#3C3489",
-    backgroundColor: "#0f0d1a",
-    color: "#EEEDFE",
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    fontSize: 14,
-    textAlignVertical: "top",
-    marginBottom: 16,
-  },
   previewCard: {
-    maxHeight: 180,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#252240",
-    backgroundColor: "#100e1f",
-    marginBottom: 18,
+    paddingHorizontal: 18,
   },
   previewCardContent: {
-    padding: 14,
+    paddingTop: 14,
+    paddingBottom: 22,
+  },
+  previewDate: {
+    color: "#5dcaa5",
+    fontSize: 11,
+    marginBottom: 14,
   },
   previewText: {
-    color: "#c8c2ef",
-    fontSize: 14,
+    color: "#e8e6ff",
+    fontSize: 13,
     lineHeight: 22,
-  },
-  modalActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 10,
   },
 });
