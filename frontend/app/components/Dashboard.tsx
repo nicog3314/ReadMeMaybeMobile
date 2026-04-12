@@ -22,7 +22,7 @@ import {
   normalizeStoredRepo,
   type StoredRepoRecord,
   timeAgo,
-} from "../lib/storedRepos";
+} from "../../lib/storedRepos";
 
 type StoredUser = {
   firstName?: string;

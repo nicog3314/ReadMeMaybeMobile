@@ -1,6 +1,14 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { isMailerConfigured, sendEmail } = require('../utils/mailer');
+
+const EMAIL_VERIFICATION_TTL = '1d';
+
+function buildVerificationUrl(req, token) {
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    return `${baseUrl}/api/auth/verify/${token}`;
+}
 
 function normalizeReadmes(rawReadmes = [], fallbackCreatedAt = new Date()) {
     if (!Array.isArray(rawReadmes)) {
@@ -144,16 +152,18 @@ function serializeUser(user) {
 
 const register = async (req, res) => {
     try{
-        const{FirstName, LastName, Login, Email, Password} = req.body;
+        const{FirstName, LastName, Login = '', Email = '', Password} = req.body;
+        const normalizedLogin = Login.trim().toLowerCase();
+        const normalizedEmail = Email.trim().toLowerCase();
 
         // check if the login is taken
-        const existingLogin = await User.findOne({Login});
+        const existingLogin = await User.findOne({Login: normalizedLogin});
         if (existingLogin){
             return res.status(400).json({message: 'Login already in use'});
         }
 
         // check if the email is taken
-        const existingEmail = await User.findOne({Email});
+        const existingEmail = await User.findOne({Email: normalizedEmail});
         if (existingEmail){
             return res.status(400).json({message: 'Email already in use'});
         }
@@ -166,16 +176,47 @@ const register = async (req, res) => {
         const newUser = await User.create({
             FirstName,
             LastName,
-            Login,
-            Email,
+            Login: normalizedLogin,
+            Email: normalizedEmail,
+            EmailVerified: false,
             hashedPassword
         });
 
-        // generate jwt token
-        const jwtToken = jwt.sign({id: newUser._id}, process.env.JWT_SECRET, {expiresIn: '1h'});
+        const emailToken = jwt.sign(
+            { id: newUser._id.toString(), type: 'email-verification' },
+            process.env.JWT_SECRET,
+            { expiresIn: EMAIL_VERIFICATION_TTL }
+        );
+        const verificationUrl = buildVerificationUrl(req, emailToken);
+        const subject = 'Verify your email for ReadMeMaybe';
+        const text = [
+            'Welcome to ReadMeMaybe.',
+            `Open this link to verify your account: ${verificationUrl}`,
+            'This link expires in 24 hours.'
+        ].join('\n\n');
+        const html = `
+            <h2>Welcome to ReadMeMaybe</h2>
+            <p>Click below to verify your account.</p>
+            <p><a href="${verificationUrl}">Verify Email</a></p>
+            <p>This link expires in 24 hours.</p>
+        `;
+
+        if (isMailerConfigured()) {
+            await sendEmail({
+                to: newUser.Email,
+                subject,
+                text,
+                html
+            });
+        } else {
+            console.log(`[register] Mailer not configured. Verification link for ${newUser.Email}: ${verificationUrl}`);
+        }
 
         //return on success
-        res.status(201).json({jwtToken, user: serializeUser(newUser)});
+        res.status(201).json({
+            user: serializeUser(newUser),
+            message: 'User registered. Please check email to verify your account.'
+        });
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'});
@@ -185,12 +226,17 @@ const register = async (req, res) => {
 const login = async (req, res) => {
     try{
         // get email and password
-        const{Email, Password} = req.body;
+        const{Email = '', Password} = req.body;
+        const normalizedEmail = Email.trim().toLowerCase();
 
         // find user by email
-        const returnUser = await User.findOne({Email});
+        const returnUser = await User.findOne({Email: normalizedEmail});
         if(!returnUser){
             return res.status(400).json({message: 'Invalid Email'});
+        }
+
+        if (returnUser.EmailVerified === false) {
+            return res.status(400).json({message: 'Please verify your email before logging in'});
         }
 
         // compare the password
@@ -207,6 +253,40 @@ const login = async (req, res) => {
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'})
+    }
+};
+
+const verifyEmail = async (req, res) => {
+    try {
+        const { token } = req.params;
+
+        if (!token) {
+            return res.status(400).send('Invalid verification link.');
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        if (decoded.type !== 'email-verification' || !decoded.id) {
+            return res.status(400).send('Invalid verification link.');
+        }
+
+        const user = await User.findById(decoded.id);
+        if (!user) {
+            return res.status(400).send('User not found.');
+        }
+
+        if (user.EmailVerified) {
+            return res.send('Email is already verified.');
+        }
+
+        user.EmailVerified = true;
+        user.EmailVerifiedAt = new Date();
+        await user.save();
+
+        return res.send('Email was successfully verified! You may now login.');
+    } catch (error) {
+        console.error(error);
+        return res.status(400).send('Invalid verification link.');
     }
 };
 
@@ -318,4 +398,13 @@ const deleteReadme = async(req, res) => {
     }
 };
 
-module.exports = {register, login, me, readmes, createReadme, updateReadme, deleteReadme};
+module.exports = {
+    register,
+    login,
+    verifyEmail,
+    me,
+    readmes,
+    createReadme,
+    updateReadme,
+    deleteReadme
+};

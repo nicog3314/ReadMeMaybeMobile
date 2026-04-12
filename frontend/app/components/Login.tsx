@@ -18,6 +18,7 @@ export default function Login() {
 
   const [isCreateAccount, setIsCreateAccount] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "success" | "">("");
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -42,6 +43,7 @@ export default function Login() {
 
       if (!response.ok) {
         setMessage(res.message || "Login failed");
+        setMessageTone("error");
       } else {
         const user = {
           firstName: res.user.FirstName,
@@ -52,6 +54,7 @@ export default function Login() {
 
         await AsyncStorage.setItem("user_data", JSON.stringify(user));
         setMessage("");
+        setMessageTone("");
         router.replace("/dashboard");
       }
     } catch (error: any) {
@@ -80,8 +83,12 @@ export default function Login() {
 
       if (!response.ok) {
         setMessage(res.message || "Registration failed");
+        setMessageTone("error");
       } else {
-        setMessage("Account created! You can now sign in.");
+        setMessage(
+          res.message || "User registered. Please check email to verify your account."
+        );
+        setMessageTone("success");
         setIsCreateAccount(false);
       }
     } catch (error: any) {
@@ -97,13 +104,6 @@ export default function Login() {
 
     await doLogin();
   }
-
-  const isErrorMessage =
-    message.toLowerCase().includes("invalid") ||
-    message.toLowerCase().includes("incorrect") ||
-    message.toLowerCase().includes("failed") ||
-    message.toLowerCase().includes("in use");
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
@@ -146,6 +146,7 @@ export default function Login() {
                 onPress={() => {
                   setIsCreateAccount(false);
                   setMessage("");
+                  setMessageTone("");
                 }}
               >
                 <Text
@@ -166,6 +167,7 @@ export default function Login() {
                 onPress={() => {
                   setIsCreateAccount(true);
                   setMessage("");
+                  setMessageTone("");
                 }}
               >
                 <Text
@@ -230,12 +232,6 @@ export default function Login() {
               />
             </View>
 
-            {!isCreateAccount && (
-              <TouchableOpacity style={styles.forgotButton}>
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </TouchableOpacity>
-            )}
-
             <TouchableOpacity
               style={styles.submitButton}
               onPress={handleAuthSubmit}
@@ -249,7 +245,7 @@ export default function Login() {
               <View
                 style={[
                   styles.messageBox,
-                  isErrorMessage
+                  messageTone === "error"
                     ? styles.errorMessageBox
                     : styles.successMessageBox,
                 ]}
@@ -443,14 +439,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
-  },
-  forgotButton: {
-    alignSelf: "flex-end",
-    marginBottom: 16,
-  },
-  forgotText: {
-    color: "#D4D2F8",
-    fontSize: 14,
   },
   submitButton: {
     marginTop: 6,
