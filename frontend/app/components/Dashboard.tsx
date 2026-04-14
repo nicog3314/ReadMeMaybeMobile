@@ -249,10 +249,8 @@ export default function Dashboard() {
             <View style={styles.messageCard}>
               <Text style={styles.messageTitle}>No generated repos yet</Text>
               <Text style={styles.messageText}>
-                The app is now reading the website&apos;s saved repository records.
-                If you generated READMEs on the web and still see nothing here,
-                make sure the mobile app is pointing at the same backend and
-                database.
+                Thank you for creating an account with ReadMe Maybe! Please Login on readme.com to
+                start generating!
               </Text>
             </View>
           ) : null}

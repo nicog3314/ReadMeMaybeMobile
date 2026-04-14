@@ -1,14 +1,6 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { isMailerConfigured, sendEmail } = require('../utils/mailer');
-
-const EMAIL_VERIFICATION_TTL = '1d';
-
-function buildVerificationUrl(req, token) {
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    return `${baseUrl}/api/auth/verify/${token}`;
-}
 
 function normalizeReadmes(rawReadmes = [], fallbackCreatedAt = new Date()) {
     if (!Array.isArray(rawReadmes)) {
@@ -178,45 +170,12 @@ const register = async (req, res) => {
             LastName,
             Login: normalizedLogin,
             Email: normalizedEmail,
-            EmailVerified: false,
             hashedPassword
         });
 
-        const emailToken = jwt.sign(
-            { id: newUser._id.toString(), type: 'email-verification' },
-            process.env.JWT_SECRET,
-            { expiresIn: EMAIL_VERIFICATION_TTL }
-        );
-        const verificationUrl = buildVerificationUrl(req, emailToken);
-        const subject = 'Verify your email for ReadMeMaybe';
-        const text = [
-            'Welcome to ReadMeMaybe.',
-            `Open this link to verify your account: ${verificationUrl}`,
-            'This link expires in 24 hours.'
-        ].join('\n\n');
-        const html = `
-            <h2>Welcome to ReadMeMaybe</h2>
-            <p>Click below to verify your account.</p>
-            <p><a href="${verificationUrl}">Verify Email</a></p>
-            <p>This link expires in 24 hours.</p>
-        `;
+        const jwtToken = jwt.sign({id: newUser._id}, process.env.JWT_SECRET, {expiresIn: '1h'});
 
-        if (isMailerConfigured()) {
-            await sendEmail({
-                to: newUser.Email,
-                subject,
-                text,
-                html
-            });
-        } else {
-            console.log(`[register] Mailer not configured. Verification link for ${newUser.Email}: ${verificationUrl}`);
-        }
-
-        //return on success
-        res.status(201).json({
-            user: serializeUser(newUser),
-            message: 'User registered. Please check email to verify your account.'
-        });
+        return res.status(201).json({jwtToken, user: serializeUser(newUser)});
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'});
@@ -235,10 +194,6 @@ const login = async (req, res) => {
             return res.status(400).json({message: 'Invalid Email'});
         }
 
-        if (returnUser.EmailVerified === false) {
-            return res.status(400).json({message: 'Please verify your email before logging in'});
-        }
-
         // compare the password
         const match = await bcrypt.compare(Password, returnUser.hashedPassword);
         if(!match){
@@ -253,40 +208,6 @@ const login = async (req, res) => {
     }catch(error){
         console.error(error);
         res.status(500).json({message: 'Server Error'})
-    }
-};
-
-const verifyEmail = async (req, res) => {
-    try {
-        const { token } = req.params;
-
-        if (!token) {
-            return res.status(400).send('Invalid verification link.');
-        }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-        if (decoded.type !== 'email-verification' || !decoded.id) {
-            return res.status(400).send('Invalid verification link.');
-        }
-
-        const user = await User.findById(decoded.id);
-        if (!user) {
-            return res.status(400).send('User not found.');
-        }
-
-        if (user.EmailVerified) {
-            return res.send('Email is already verified.');
-        }
-
-        user.EmailVerified = true;
-        user.EmailVerifiedAt = new Date();
-        await user.save();
-
-        return res.send('Email was successfully verified! You may now login.');
-    } catch (error) {
-        console.error(error);
-        return res.status(400).send('Invalid verification link.');
     }
 };
 
@@ -401,7 +322,6 @@ const deleteReadme = async(req, res) => {
 module.exports = {
     register,
     login,
-    verifyEmail,
     me,
     readmes,
     createReadme,

@@ -63,38 +63,42 @@ export default function Login() {
   }
 
   async function doRegister() {
-    try {
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/api/auth/register`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            FirstName: firstName,
-            LastName: lastName,
-            Login: loginName,
-            Email: loginName,
-            Password: loginPassword,
-          }),
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-
-      const res = await response.json();
-
-      if (!response.ok) {
-        setMessage(res.message || "Registration failed");
-        setMessageTone("error");
-      } else {
-        setMessage(
-          res.message || "User registered. Please check email to verify your account."
-        );
-        setMessageTone("success");
-        setIsCreateAccount(false);
+  try {
+    const response = await fetch(
+      `${process.env.EXPO_PUBLIC_API_URL}/api/auth/register`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          FirstName: firstName,
+          LastName: lastName,
+          Login: loginName,
+          Email: loginName,
+          Password: loginPassword,
+        }),
+        headers: { "Content-Type": "application/json" },
       }
-    } catch (error: any) {
-      Alert.alert("Registration Error", error.toString());
+    );
+
+    const res = await response.json();
+
+    if (!response.ok) {
+      setMessage(res.message || "Registration failed");
+    } else {
+      const user = {
+        firstName: res.user.FirstName,
+        lastName: res.user.LastName,
+        id: res.user._id,
+        token: res.jwtToken,
+      };
+
+      await AsyncStorage.setItem("user_data", JSON.stringify(user));
+
+      router.replace("/dashboard");
     }
+  } catch (error: any) {
+    Alert.alert("Registration Error", error.toString());
   }
+}
 
   async function handleAuthSubmit() {
     if (isCreateAccount) {
